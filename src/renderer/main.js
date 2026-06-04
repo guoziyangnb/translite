@@ -1,12 +1,11 @@
 import { createApp } from 'vue';
 import {
-  NButton,
   NConfigProvider,
+  NButton,
   NInput,
   NProgress,
   NSelect,
   NSpace,
-  NSwitch,
   NTag
 } from 'naive-ui';
 import App from './App.vue';
@@ -20,7 +19,6 @@ app.component('NInput', NInput);
 app.component('NProgress', NProgress);
 app.component('NSelect', NSelect);
 app.component('NSpace', NSpace);
-app.component('NSwitch', NSwitch);
 app.component('NTag', NTag);
 
 app.mount('#app');

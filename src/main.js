@@ -171,9 +171,7 @@ function joinEndpoint(baseUrl, pathValue) {
   const cleanBase = baseUrl.replace(/\/$/, '');
   let cleanPath = (pathValue || '').startsWith('/') ? pathValue : `/${pathValue || ''}`;
 
-  // Compatible with both:
-  //   Base URL = https://api.example.com, path = /v1/models
-  //   Base URL = https://api.example.com/v1, path = /v1/models
+  // 兼容两种常见填写方式，避免拼出 /v1/v1/models。
   if (/\/v\d+$/i.test(cleanBase) && /^\/v\d+\//i.test(cleanPath)) {
     cleanPath = cleanPath.replace(/^\/v\d+/i, '');
   }
@@ -203,6 +201,7 @@ async function readJsonResponse(response, requestUrl, purpose) {
   try {
     return JSON.parse(text);
   } catch {
+    // 很多用户会误填控制台网页域名，服务端会返回 HTML，这里给出可操作错误。
     const looksLikeHtml = /^<!doctype|^<html|<body/i.test(preview);
     if (looksLikeHtml) {
       throw new Error(`${purpose}失败：接口返回的是 HTML 页面，不是 JSON。请检查 Base URL 和路径。实际请求地址：${requestUrl}`);
