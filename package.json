@@ -1,0 +1,31 @@
+{
+  "name": "light-translator",
+  "version": "0.1.0",
+  "description": "A lightweight desktop translator with a global quick-open shortcut.",
+  "main": "src/main.js",
+  "scripts": {
+    "build": "vite build",
+    "prestart": "npm run build",
+    "start": "electron .",
+    "dev": "vite --host 127.0.0.1",
+    "lint": "node --check src/main.js && node --check src/preload.js && node --check src/localTranslator.node.js"
+  },
+  "keywords": [
+    "electron",
+    "translator",
+    "desktop"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.7",
+    "electron": "^31.7.7",
+    "vite": "^8.0.16"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "lucide-vue-next": "^0.577.0",
+    "naive-ui": "^2.44.1",
+    "vue": "^3.5.35"
+  }
+}
