@@ -49,6 +49,7 @@ function normalizeEndpoint(endpoint = {}) {
 function normalizeUsageConfig(config = {}) {
   const script = migrateUsageScript(config.script || '', config.template || 'deepseek');
   return {
+    enabled: config.enabled ?? Boolean(config.lastCheckedAt || config.lastResult || config.lastError),
     template: config.template || 'deepseek',
     timeoutSeconds: Number(config.timeoutSeconds ?? 10),
     intervalMinutes: Number(config.intervalMinutes ?? 0),

@@ -64,6 +64,8 @@
         @activate-endpoint="activateEndpoint"
         @test-endpoint="testEndpoint"
         @test-usage-config="testUsageConfig"
+        @test-usage-config-draft="testUsageConfigDraft"
+        @save-usage-config="saveUsageConfig"
         @remove-endpoint="removeEndpoint"
       />
 
@@ -206,13 +208,13 @@ async function saveSettings() {
   return persistSettings({ showSuccess: true });
 }
 
-async function persistSettings({ showSuccess = false } = {}) {
+async function persistSettings({ showSuccess = false, showError = true } = {}) {
   saveLoading.value = true;
   try {
     applySettings(await window.translator.saveSettings(cloneSettings()));
     if (showSuccess) showMessage('success', '保存成功');
   } catch (error) {
-    showMessage('error', error.message || '保存失败');
+    if (showError) showMessage('error', error.message || '保存失败');
     throw error;
   } finally {
     saveLoading.value = false;
@@ -303,12 +305,12 @@ async function saveEndpoint(endpoint) {
   await persistEndpoint(endpoint, { showSuccess: true });
 }
 
-async function persistEndpoint(endpoint, { showSuccess = false } = {}) {
+async function persistEndpoint(endpoint, { showSuccess = false, showError = true } = {}) {
   const clean = normalizeEndpoint(plain(endpoint));
   const index = settings.online.endpoints.findIndex((item) => item.id === clean.id);
   if (index >= 0) settings.online.endpoints[index] = clean;
   else settings.online.endpoints.push(clean);
-  await persistSettings();
+  await persistSettings({ showError });
   if (showSuccess) showMessage('success', '供应商已保存');
 }
 
@@ -344,8 +346,10 @@ async function removeEndpoint(id) {
   try {
     settings.online.endpoints = settings.online.endpoints.filter((endpoint) => endpoint.id !== id);
     if (settings.online.activeId === id) settings.online.activeId = settings.online.endpoints[0]?.id || '';
-    await saveSettings();
-    showMessage('warning', '接口已删除');
+    await persistSettings({ showError: false });
+    showMessage('success', '供应商已删除');
+  } catch (error) {
+    showMessage('error', error.message || '供应商删除失败');
   } finally {
     removingId.value = '';
   }
@@ -366,33 +370,89 @@ async function testEndpoint(endpoint) {
 async function testUsageConfig(endpoint) {
   usageId.value = endpoint.id;
   try {
-    const result = await window.translator.testUsageConfig(plain(endpoint));
-    endpoint.usageConfig = {
-      ...(endpoint.usageConfig || {}),
-      lastCheckedAt: result.checkedAt,
-      lastResult: result.usage,
-      lastError: ''
-    };
-    await persistEndpoint(endpoint);
+    const result = await refreshUsageConfig(endpoint);
     const remaining = result.usage?.remaining ?? result.usage?.balance ?? '-';
     const unit = result.usage?.unit || 'CNY';
     showMessage('success', `用量查询成功：剩余 ${remaining}${unit}`);
   } catch (error) {
+    showMessage('error', error.message || '用量查询失败');
+  } finally {
+    usageId.value = '';
+  }
+}
+
+async function testUsageConfigDraft(endpoint) {
+  usageId.value = endpoint.id;
+  try {
+    const result = await window.translator.testUsageConfig(plain(endpoint));
+    const remaining = result.usage?.remaining ?? result.usage?.balance ?? '-';
+    const unit = result.usage?.unit || 'CNY';
+    showMessage('success', `测试脚本通过：剩余 ${remaining}${unit}`);
+  } catch (error) {
+    showMessage('error', error.message || '测试脚本失败');
+  } finally {
+    usageId.value = '';
+  }
+}
+
+async function saveUsageConfig(endpoint, done) {
+  if (!endpoint.usageConfig?.enabled) {
     endpoint.usageConfig = {
       ...(endpoint.usageConfig || {}),
+      enabled: false,
+      lastCheckedAt: '',
+      lastResult: null,
+      lastError: ''
+    };
+    try {
+      await persistEndpoint(endpoint, { showError: false });
+      showMessage('success', '用量查询配置已关闭');
+      done?.();
+    } catch (error) {
+      showMessage('error', error.message || '用量查询配置关闭失败');
+    }
+    return;
+  }
+
+  usageId.value = endpoint.id;
+  try {
+    const result = await refreshUsageConfig(endpoint);
+    const remaining = result.usage?.remaining ?? result.usage?.balance ?? '-';
+    const unit = result.usage?.unit || 'CNY';
+    showMessage('success', `用量查询配置已保存：剩余 ${remaining}${unit}`);
+    done?.();
+  } catch (error) {
+    endpoint.usageConfig = {
+      ...(endpoint.usageConfig || {}),
+      enabled: true,
       lastCheckedAt: new Date().toISOString(),
       lastResult: null,
       lastError: error.message || '用量查询失败'
     };
     try {
-      await persistEndpoint(endpoint);
+      await persistEndpoint(endpoint, { showError: false });
     } catch {
-      // 保存失败时保留原始查询错误提示，避免一次刷新弹出多个错误。
+      showMessage('error', '用量查询失败，且配置保存失败');
+      return;
     }
     showMessage('error', error.message || '用量查询失败');
+    done?.();
   } finally {
     usageId.value = '';
   }
+}
+
+async function refreshUsageConfig(endpoint) {
+  const result = await window.translator.testUsageConfig(plain(endpoint));
+  endpoint.usageConfig = {
+    ...(endpoint.usageConfig || {}),
+    enabled: true,
+    lastCheckedAt: result.checkedAt,
+    lastResult: result.usage,
+    lastError: ''
+  };
+  await persistEndpoint(endpoint, { showError: false });
+  return result;
 }
 
 async function translate() {

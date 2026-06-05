@@ -39,8 +39,8 @@
         :usage-id="usageId"
         :save-loading="saveLoading"
         @cancel="backToList"
-        @save="saveDraft"
-        @test="$emit('test-usage-config', $event)"
+        @save="saveUsageConfig"
+        @test="$emit('test-usage-config-draft', $event)"
       />
     </article>
   </section>
@@ -71,6 +71,8 @@ const emit = defineEmits([
   'activate-endpoint',
   'test-endpoint',
   'test-usage-config',
+  'test-usage-config-draft',
+  'save-usage-config',
   'remove-endpoint'
 ]);
 
@@ -95,6 +97,7 @@ function createEndpointDraft(source = {}) {
 function createUsageConfig(source = {}) {
   const script = migrateUsageScript(source.script || defaultUsageScript(), source.template || 'deepseek');
   return {
+    enabled: source.enabled ?? Boolean(source.lastCheckedAt || source.lastResult || source.lastError),
     template: source.template || 'deepseek',
     timeoutSeconds: String(source.timeoutSeconds ?? 10),
     intervalMinutes: String(source.intervalMinutes ?? 0),
@@ -159,6 +162,10 @@ function backToList() {
 function saveDraft(endpoint) {
   emit('save-endpoint', endpoint);
   view.value = 'list';
+}
+
+function saveUsageConfig(endpoint) {
+  emit('save-usage-config', endpoint, backToList);
 }
 
 watch(

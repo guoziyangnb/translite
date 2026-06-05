@@ -36,7 +36,7 @@
           </div>
 
           <div
-            v-if="endpoint.usageConfig?.lastResult || endpoint.usageConfig?.lastCheckedAt || endpoint.usageConfig?.lastError"
+            v-if="endpoint.usageConfig?.enabled"
             class="usage-status"
           >
             <span class="usage-date">
@@ -82,7 +82,7 @@
           </n-button>
           <n-button secondary @click="$emit('configure-usage', endpoint)">
             <template #icon><WalletCards :size="16" /></template>
-            配置用量查询
+            {{ endpoint.usageConfig?.enabled ? '编辑配置' : '配置用量查询' }}
           </n-button>
           <n-button quaternary :loading="removingId === endpoint.id" @click="$emit('remove', endpoint.id)">
             <template #icon><Trash2 :size="16" /></template>

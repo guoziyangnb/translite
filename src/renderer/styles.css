@@ -422,6 +422,22 @@ output {
   gap: 10px;
 }
 
+.usage-enable-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfb;
+}
+
+.usage-enable-row strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
 .code-field {
   display: grid;
   gap: 8px;
