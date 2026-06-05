@@ -29,8 +29,12 @@
             </div>
 
             <div class="provider-actions">
-              <n-button secondary @click="startEdit(endpoint)">编辑</n-button>
+              <n-button secondary @click="startEdit(endpoint)">
+                <template #icon><Pencil :size="16" /></template>
+                编辑
+              </n-button>
               <n-button v-if="activeId === endpoint.id" secondary disabled>
+                <template #icon><CircleCheck :size="16" /></template>
                 已启用
               </n-button>
               <n-button v-else type="primary" :loading="activatingId === endpoint.id" @click="$emit('activate-endpoint', endpoint)">
@@ -121,7 +125,7 @@
 
 <script setup>
 import { reactive, ref, watch } from 'vue';
-import { Plus, Trash2, Wifi } from 'lucide-vue-next';
+import { CircleCheck, Pencil, Plus, Trash2, Wifi } from 'lucide-vue-next';
 
 const props = defineProps({
   endpoints: { type: Array, required: true },
