@@ -27,8 +27,11 @@
       </label>
     </div>
 
-    <label>
-      <span>提取器代码</span>
+    <label class="code-field">
+      <span class="code-field-heading">
+        <span>提取器代码</span>
+        <small>返回对象需包含剩余额度等字段</small>
+      </span>
       <CodeEditor
         v-model:value="draft.usageConfig.script"
       />

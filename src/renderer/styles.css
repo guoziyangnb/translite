@@ -353,36 +353,60 @@ output {
   gap: 10px;
 }
 
+.code-field {
+  gap: 8px;
+}
+
+.code-field-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.code-field-heading small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .code-mirror-host {
-  min-height: 360px;
+  min-height: 390px;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #0f1713;
+  border: 1px solid #cfd9e6;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.code-mirror-host:focus-within {
+  border-color: #8fb7e5;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
 .code-mirror-host .cm-editor {
-  min-height: 360px;
-  color: #dce8df;
-  background: #0f1713;
-  font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 13px;
-  line-height: 1.55;
+  height: 100%;
 }
 
 .code-mirror-host .cm-scroller {
-  min-height: 360px;
+  scrollbar-color: #c8d6e7 #f6f9fc;
+  scrollbar-width: thin;
 }
 
-.code-mirror-host .cm-gutters {
-  color: #7f9188;
-  background: #111b16;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+.code-mirror-host .cm-scroller::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
-.code-mirror-host .cm-activeLine,
-.code-mirror-host .cm-activeLineGutter {
-  background: rgba(255, 255, 255, 0.06);
+.code-mirror-host .cm-scroller::-webkit-scrollbar-track {
+  background: #f6f9fc;
+}
+
+.code-mirror-host .cm-scroller::-webkit-scrollbar-thumb {
+  border: 2px solid #f6f9fc;
+  border-radius: 999px;
+  background: #c8d6e7;
 }
 
 .usage-preview,
