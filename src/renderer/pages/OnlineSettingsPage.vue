@@ -91,30 +91,37 @@ function createEndpointDraft(source = {}) {
 }
 
 function createUsageConfig(source = {}) {
+  const script = migrateUsageScript(source.script || defaultUsageScript(), source.template || 'deepseek');
   return {
     template: source.template || 'deepseek',
     timeoutSeconds: String(source.timeoutSeconds ?? 10),
     intervalMinutes: String(source.intervalMinutes ?? 0),
-    script: source.script || defaultUsageScript(),
+    script,
     lastCheckedAt: source.lastCheckedAt || '',
     lastResult: source.lastResult || null
   };
 }
 
+function migrateUsageScript(script, template) {
+  if (template === 'deepseek' && script.includes('{{baseUrl}}/v1/usage')) return defaultUsageScript();
+  return script;
+}
+
 function defaultUsageScript() {
   return `({
     request: {
-      url: "{{baseUrl}}/v1/usage",
+      url: "{{baseUrl}}/user/balance",
       method: "GET",
       headers: { "Authorization": "Bearer {{apiKey}}" }
     },
     extractor: function(response) {
-      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "CNY";
+      const balances = response?.balance_infos || [];
+      const cny = balances.find((item) => item.currency === "CNY") || balances[0] || {};
+      const remaining = cny.total_balance ?? cny.granted_balance ?? cny.topped_up_balance;
       return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
+        isValid: response?.is_available ?? true,
         remaining,
-        unit
+        unit: cny.currency || "CNY"
       };
     }
   })`;

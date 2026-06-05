@@ -29,11 +29,8 @@
 
     <label>
       <span>提取器代码</span>
-      <n-input
+      <CodeEditor
         v-model:value="draft.usageConfig.script"
-        class="code-editor"
-        type="textarea"
-        :autosize="{ minRows: 18, maxRows: 24 }"
       />
     </label>
 
@@ -62,6 +59,7 @@
 
 <script setup>
 import { ref } from 'vue';
+import CodeEditor from './CodeEditor.vue';
 
 const props = defineProps({
   draft: { type: Object, required: true },
@@ -139,17 +137,18 @@ const templates = {
   })`,
   deepseek: `({
     request: {
-      url: "{{baseUrl}}/v1/usage",
+      url: "{{baseUrl}}/user/balance",
       method: "GET",
       headers: { "Authorization": "Bearer {{apiKey}}" }
     },
     extractor: function(response) {
-      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "CNY";
+      const balances = response?.balance_infos || [];
+      const cny = balances.find((item) => item.currency === "CNY") || balances[0] || {};
+      const remaining = cny.total_balance ?? cny.granted_balance ?? cny.topped_up_balance;
       return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
+        isValid: response?.is_available ?? true,
         remaining,
-        unit
+        unit: cny.currency || "CNY"
       };
     }
   })`

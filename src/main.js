@@ -47,14 +47,38 @@ function normalizeEndpoint(endpoint = {}) {
 }
 
 function normalizeUsageConfig(config = {}) {
+  const script = migrateUsageScript(config.script || '', config.template || 'deepseek');
   return {
     template: config.template || 'deepseek',
     timeoutSeconds: Number(config.timeoutSeconds ?? 10),
     intervalMinutes: Number(config.intervalMinutes ?? 0),
-    script: config.script || '',
+    script,
     lastCheckedAt: config.lastCheckedAt || '',
     lastResult: config.lastResult || null
   };
+}
+
+function migrateUsageScript(script, template) {
+  if (template === 'deepseek' && script.includes('{{baseUrl}}/v1/usage')) {
+    return `({
+    request: {
+      url: "{{baseUrl}}/user/balance",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      const balances = response?.balance_infos || [];
+      const cny = balances.find((item) => item.currency === "CNY") || balances[0] || {};
+      const remaining = cny.total_balance ?? cny.granted_balance ?? cny.topped_up_balance;
+      return {
+        isValid: response?.is_available ?? true,
+        remaining,
+        unit: cny.currency || "CNY"
+      };
+    }
+  })`;
+  }
+  return script;
 }
 
 function normalizeSettings(nextSettings = {}) {

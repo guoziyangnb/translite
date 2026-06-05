@@ -353,10 +353,36 @@ output {
   gap: 10px;
 }
 
-.code-editor textarea {
+.code-mirror-host {
+  min-height: 360px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0f1713;
+}
+
+.code-mirror-host .cm-editor {
+  min-height: 360px;
+  color: #dce8df;
+  background: #0f1713;
   font-family: "Cascadia Code", "Consolas", monospace;
   font-size: 13px;
   line-height: 1.55;
+}
+
+.code-mirror-host .cm-scroller {
+  min-height: 360px;
+}
+
+.code-mirror-host .cm-gutters {
+  color: #7f9188;
+  background: #111b16;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.code-mirror-host .cm-activeLine,
+.code-mirror-host .cm-activeLineGutter {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .usage-preview,
