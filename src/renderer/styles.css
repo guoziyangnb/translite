@@ -354,7 +354,11 @@ output {
 }
 
 .code-field {
+  display: grid;
   gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .code-field-heading {
@@ -373,20 +377,28 @@ output {
 .code-mirror-host {
   min-height: 390px;
   overflow: hidden;
-  border: 1px solid #cfd9e6;
+  border: 1px solid #99c2f2;
   border-radius: 4px;
   background: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  box-shadow: none;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .code-mirror-host:focus-within {
-  border-color: #8fb7e5;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+  border-color: #6aa8ee;
+  box-shadow: 0 0 0 1px rgba(106, 168, 238, 0.35);
 }
 
 .code-mirror-host .cm-editor {
   height: 100%;
+  font-weight: 400;
+  cursor: text;
+}
+
+.code-mirror-host .cm-content,
+.code-mirror-host .cm-line {
+  font-weight: 400;
+  cursor: text;
 }
 
 .code-mirror-host .cm-scroller {

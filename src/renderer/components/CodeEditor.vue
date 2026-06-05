@@ -23,69 +23,78 @@ let editorView;
 const lightEditorTheme = EditorView.theme({
   '&': {
     minHeight: '390px',
-    color: '#111827',
+    color: '#000000',
     backgroundColor: '#ffffff',
-    fontSize: '13px',
+    fontSize: '12px',
     borderRadius: '4px'
   },
   '.cm-scroller': {
     minHeight: '390px',
-    fontFamily: '"Cascadia Code", "JetBrains Mono", Consolas, monospace',
-    lineHeight: '1.52'
+    fontFamily: 'Consolas, "Courier New", monospace',
+    lineHeight: '1.5',
+    cursor: 'text'
   },
   '.cm-content': {
-    padding: '8px 0',
-    caretColor: '#2563eb'
+    padding: '4px 0',
+    caretColor: '#111827',
+    cursor: 'text'
   },
   '.cm-line': {
-    padding: '0 14px'
+    padding: '0 20px 0 16px'
   },
   '.cm-gutters': {
-    color: '#5f6f86',
-    backgroundColor: '#eef6ff',
-    borderRight: '1px solid #d7e4f2'
+    color: '#5f6975',
+    backgroundColor: '#fbfdff',
+    borderRight: '1px solid #edf1f5',
+    cursor: 'default'
   },
   '.cm-lineNumbers .cm-gutterElement': {
-    minWidth: '38px',
-    padding: '0 10px 0 8px',
+    minWidth: '26px',
+    padding: '0 6px 0 4px',
     fontVariantNumeric: 'tabular-nums'
   },
   '.cm-activeLine': {
-    backgroundColor: '#f8fbff'
+    backgroundColor: '#eaf4ff'
   },
   '.cm-activeLineGutter': {
-    backgroundColor: '#dbeeff',
-    color: '#1f4b7a'
+    backgroundColor: '#fbfdff',
+    color: '#364b63'
   },
   '.cm-cursor': {
-    borderLeftColor: '#2563eb',
-    borderLeftWidth: '2px'
+    borderLeftColor: '#111827',
+    borderLeftWidth: '1.5px'
   },
   '&.cm-focused': {
     outline: 'none'
   },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-    backgroundColor: '#c7ddff'
+    backgroundColor: '#add6ff'
+  },
+  '.cm-dropCursor': {
+    borderLeftColor: '#111827'
+  },
+  '.cm-selectionLayer': {
+    pointerEvents: 'none'
   },
   '.cm-matchingBracket, .cm-nonmatchingBracket': {
-    backgroundColor: '#fff4bf',
-    outline: '1px solid #f4d35e'
+    backgroundColor: '#d7f5ec',
+    outline: '1px solid #9dd8c7'
   },
   '.cm-foldGutter .cm-gutterElement': {
-    padding: '0 4px',
-    color: '#7a8da6'
+    padding: '0 2px',
+    color: '#7d8793'
   }
 });
 
 const lightSyntax = HighlightStyle.define([
-  { tag: tags.keyword, color: '#0000ff' },
+  { tag: tags.keyword, color: '#0000ff', fontWeight: '400' },
   { tag: [tags.string, tags.special(tags.string)], color: '#a31515' },
   { tag: [tags.number, tags.bool, tags.null], color: '#098658' },
   { tag: [tags.function(tags.variableName), tags.definition(tags.variableName)], color: '#795e26' },
-  { tag: tags.variableName, color: '#001080' },
-  { tag: tags.propertyName, color: '#0070c1' },
+  { tag: tags.variableName, color: '#0000ff' },
+  { tag: tags.propertyName, color: '#001080' },
   { tag: tags.operator, color: '#000000' },
-  { tag: tags.punctuation, color: '#111827' },
+  { tag: tags.punctuation, color: '#000000' },
   { tag: tags.comment, color: '#008000', fontStyle: 'italic' }
 ]);
 

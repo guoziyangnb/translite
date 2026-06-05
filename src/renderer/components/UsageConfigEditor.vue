@@ -27,7 +27,7 @@
       </label>
     </div>
 
-    <label class="code-field">
+    <div class="code-field">
       <span class="code-field-heading">
         <span>提取器代码</span>
         <small>返回对象需包含剩余额度等字段</small>
@@ -35,7 +35,7 @@
       <CodeEditor
         v-model:value="draft.usageConfig.script"
       />
-    </label>
+    </div>
 
     <div v-if="draft.usageConfig.lastResult" class="usage-preview">
       <strong>剩余：{{ formatUsage(draft.usageConfig.lastResult) }}</strong>
