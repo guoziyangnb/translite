@@ -239,7 +239,6 @@ async function requestLLMTranslation(endpointInput, { text, sourceLang, targetLa
     headers: getHeaders(endpoint),
     body: JSON.stringify({
       model: endpoint.model,
-      temperature: 0.2,
       messages: [
         {
           role: 'system',
