@@ -8,12 +8,14 @@
         :success-tag="successTag"
         :activating-id="activatingId"
         :testing-id="testingId"
+        :usage-id="usageId"
         :removing-id="removingId"
         @create="startCreate"
         @edit="startEdit"
         @configure-usage="startUsageConfig"
         @activate="$emit('activate-endpoint', $event)"
         @test="$emit('test-endpoint', $event)"
+        @refresh-usage="$emit('test-usage-config', $event)"
         @remove="$emit('remove-endpoint', $event)"
       />
 
@@ -98,7 +100,8 @@ function createUsageConfig(source = {}) {
     intervalMinutes: String(source.intervalMinutes ?? 0),
     script,
     lastCheckedAt: source.lastCheckedAt || '',
-    lastResult: source.lastResult || null
+    lastResult: source.lastResult || null,
+    lastError: source.lastError || ''
   };
 }
 

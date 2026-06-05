@@ -203,12 +203,17 @@ function toggleSettings() {
 }
 
 async function saveSettings() {
+  return persistSettings({ showSuccess: true });
+}
+
+async function persistSettings({ showSuccess = false } = {}) {
   saveLoading.value = true;
   try {
     applySettings(await window.translator.saveSettings(cloneSettings()));
-    showMessage('success', '保存成功');
+    if (showSuccess) showMessage('success', '保存成功');
   } catch (error) {
     showMessage('error', error.message || '保存失败');
+    throw error;
   } finally {
     saveLoading.value = false;
   }
@@ -295,12 +300,16 @@ async function loadLocalModel() {
 }
 
 async function saveEndpoint(endpoint) {
+  await persistEndpoint(endpoint, { showSuccess: true });
+}
+
+async function persistEndpoint(endpoint, { showSuccess = false } = {}) {
   const clean = normalizeEndpoint(plain(endpoint));
   const index = settings.online.endpoints.findIndex((item) => item.id === clean.id);
   if (index >= 0) settings.online.endpoints[index] = clean;
   else settings.online.endpoints.push(clean);
-  await saveSettings();
-  showMessage('success', '供应商已保存');
+  await persistSettings();
+  if (showSuccess) showMessage('success', '供应商已保存');
 }
 
 async function fetchModels(endpoint) {
@@ -361,13 +370,25 @@ async function testUsageConfig(endpoint) {
     endpoint.usageConfig = {
       ...(endpoint.usageConfig || {}),
       lastCheckedAt: result.checkedAt,
-      lastResult: result.usage
+      lastResult: result.usage,
+      lastError: ''
     };
-    await saveEndpoint(endpoint);
+    await persistEndpoint(endpoint);
     const remaining = result.usage?.remaining ?? result.usage?.balance ?? '-';
     const unit = result.usage?.unit || 'CNY';
     showMessage('success', `用量查询成功：剩余 ${remaining}${unit}`);
   } catch (error) {
+    endpoint.usageConfig = {
+      ...(endpoint.usageConfig || {}),
+      lastCheckedAt: new Date().toISOString(),
+      lastResult: null,
+      lastError: error.message || '用量查询失败'
+    };
+    try {
+      await persistEndpoint(endpoint);
+    } catch {
+      // 保存失败时保留原始查询错误提示，避免一次刷新弹出多个错误。
+    }
     showMessage('error', error.message || '用量查询失败');
   } finally {
     usageId.value = '';

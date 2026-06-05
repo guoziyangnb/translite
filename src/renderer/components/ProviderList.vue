@@ -13,23 +13,55 @@
 
     <div class="provider-list">
       <div v-for="endpoint in endpoints" :key="endpoint.id" class="provider-card">
-        <div class="provider-main">
-          <div>
-            <strong>{{ endpoint.name || '未命名供应商' }}</strong>
-            <p>{{ endpoint.baseUrl || '未配置 Base URL' }}</p>
-          </div>
-          <n-tag v-if="activeId === endpoint.id" :color="successTag">已启用</n-tag>
-        </div>
+        <div class="provider-overview">
+          <div class="provider-info-block">
+            <div class="provider-main">
+              <strong>{{ endpoint.name || '未命名供应商' }}</strong>
+              <a
+                v-if="endpoint.baseUrl"
+                class="provider-base-url"
+                :href="endpoint.baseUrl"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {{ endpoint.baseUrl }}
+              </a>
+              <p v-else>未配置 Base URL</p>
+            </div>
 
-        <div class="provider-meta">
-          <span>模型：{{ endpoint.model || '未选择' }}</span>
-          <span>模型数：{{ endpoint.models?.length || 0 }}</span>
-          <span v-if="endpoint.usageConfig?.lastResult" class="usage-summary">
-            剩余：{{ formatUsage(endpoint.usageConfig.lastResult) }}
-          </span>
-          <span v-if="endpoint.usageConfig?.lastCheckedAt">
-            最近刷新：{{ formatDate(endpoint.usageConfig.lastCheckedAt) }}
-          </span>
+            <div class="provider-model-meta">
+              <span>模型：{{ endpoint.model || '未选择' }}</span>
+              <span>模型数：{{ endpoint.models?.length || 0 }}</span>
+            </div>
+          </div>
+
+          <div
+            v-if="endpoint.usageConfig?.lastResult || endpoint.usageConfig?.lastCheckedAt || endpoint.usageConfig?.lastError"
+            class="usage-status"
+          >
+            <span class="usage-date">
+              最近刷新：{{ endpoint.usageConfig?.lastCheckedAt ? formatDate(endpoint.usageConfig.lastCheckedAt) : '未查询' }}
+            </span>
+            <n-tag v-if="endpoint.usageConfig?.lastError" type="error" size="small" round>
+              查询失败
+            </n-tag>
+            <strong v-else class="usage-summary">
+              剩余：{{ formatUsage(endpoint.usageConfig?.lastResult) }}
+            </strong>
+            <n-button
+              tertiary
+              circle
+              size="small"
+              :loading="usageId === endpoint.id"
+              @click="$emit('refresh-usage', endpoint)"
+            >
+              <template #icon><RefreshCw :size="14" /></template>
+            </n-button>
+          </div>
+
+          <div class="provider-status-block">
+            <n-tag v-if="activeId === endpoint.id" :color="successTag">已启用</n-tag>
+          </div>
         </div>
 
         <div class="provider-actions">
@@ -67,25 +99,37 @@
 </template>
 
 <script setup>
-import { CircleCheck, Pencil, Plus, Trash2, WalletCards, Wifi } from 'lucide-vue-next';
+// 组件作用：展示线上翻译供应商列表，并提供编辑、启用、测试、用量查询配置和刷新入口。
+// 适用场景：线上设置页的供应商列表视图，父组件负责传入数据和处理操作事件。
+import { CircleCheck, Pencil, Plus, RefreshCw, Trash2, WalletCards, Wifi } from 'lucide-vue-next';
 
 defineProps({
+  // 供应商列表，默认由父页面从全局设置中传入。
   endpoints: { type: Array, required: true },
+  // 当前已启用供应商 id，默认空字符串。
   activeId: { type: String, default: '' },
+  // 已启用标签的 Naive UI 颜色配置，默认由父组件统一维护。
   successTag: { type: Object, required: true },
+  // 正在启用的供应商 id，默认空字符串，用于按钮 loading。
   activatingId: { type: String, default: '' },
+  // 正在测试接口的供应商 id，默认空字符串，用于按钮 loading。
   testingId: { type: String, default: '' },
+  // 正在刷新用量查询的供应商 id，默认空字符串，用于刷新按钮 loading。
+  usageId: { type: String, default: '' },
+  // 正在删除的供应商 id，默认空字符串，用于删除按钮 loading。
   removingId: { type: String, default: '' }
 });
 
-defineEmits(['create', 'edit', 'activate', 'test', 'configure-usage', 'remove']);
+defineEmits(['create', 'edit', 'activate', 'test', 'configure-usage', 'refresh-usage', 'remove']);
 
+// 格式化用量查询结果，兼容 remaining 和 balance 两种字段。
 function formatUsage(result) {
-  const remaining = result.remaining ?? result.balance ?? '-';
-  const unit = result.unit || 'CNY';
+  const remaining = result?.remaining ?? result?.balance ?? '-';
+  const unit = result?.unit || 'CNY';
   return `${remaining}${unit}`;
 }
 
+// 格式化最近刷新时间，非法日期直接返回原始值。
 function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;

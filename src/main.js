@@ -54,7 +54,8 @@ function normalizeUsageConfig(config = {}) {
     intervalMinutes: Number(config.intervalMinutes ?? 0),
     script,
     lastCheckedAt: config.lastCheckedAt || '',
-    lastResult: config.lastResult || null
+    lastResult: config.lastResult || null,
+    lastError: config.lastError || ''
   };
 }
 
