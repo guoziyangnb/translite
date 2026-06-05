@@ -52,7 +52,7 @@ const lightEditorTheme = EditorView.baseTheme({
     fontVariantNumeric: 'tabular-nums'
   },
   '.cm-activeLine': {
-    backgroundColor: '#f5faff'
+    backgroundColor: 'rgba(204, 238, 255, 0.22)'
   },
   '.cm-activeLineGutter': {
     backgroundColor: '#fbfdff',
