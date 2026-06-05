@@ -392,13 +392,6 @@ output {
 .code-mirror-host .cm-editor {
   height: 100%;
   font-weight: 400;
-  cursor: text;
-}
-
-.code-mirror-host .cm-content,
-.code-mirror-host .cm-line {
-  font-weight: 400;
-  cursor: text;
 }
 
 .code-mirror-host .cm-scroller {

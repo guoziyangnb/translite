@@ -4,10 +4,9 @@
 
 <script setup>
 import { javascript } from '@codemirror/lang-javascript';
-import { basicSetup } from 'codemirror';
+import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { EditorView } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
@@ -20,7 +19,7 @@ const emit = defineEmits(['update:value']);
 const editorHost = ref(null);
 let editorView;
 
-const lightEditorTheme = EditorView.theme({
+const lightEditorTheme = EditorView.baseTheme({
   '&': {
     minHeight: '390px',
     color: '#000000',
@@ -30,14 +29,13 @@ const lightEditorTheme = EditorView.theme({
   },
   '.cm-scroller': {
     minHeight: '390px',
-    fontFamily: 'Consolas, "Courier New", monospace',
-    lineHeight: '1.5',
-    cursor: 'text'
+    overflow: 'auto',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    lineHeight: '1.5'
   },
   '.cm-content': {
     padding: '4px 0',
-    caretColor: '#111827',
-    cursor: 'text'
+    caretColor: '#111827'
   },
   '.cm-line': {
     padding: '0 20px 0 16px'
@@ -54,7 +52,7 @@ const lightEditorTheme = EditorView.theme({
     fontVariantNumeric: 'tabular-nums'
   },
   '.cm-activeLine': {
-    backgroundColor: '#eaf4ff'
+    backgroundColor: '#f5faff'
   },
   '.cm-activeLineGutter': {
     backgroundColor: '#fbfdff',
@@ -70,11 +68,11 @@ const lightEditorTheme = EditorView.theme({
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
     backgroundColor: '#add6ff'
   },
-  '.cm-dropCursor': {
-    borderLeftColor: '#111827'
+  '.cm-content ::selection': {
+    backgroundColor: '#add6ff'
   },
-  '.cm-selectionLayer': {
-    pointerEvents: 'none'
+  '.cm-selectionMatch': {
+    backgroundColor: '#dbeafe'
   },
   '.cm-matchingBracket, .cm-nonmatchingBracket': {
     backgroundColor: '#d7f5ec',
