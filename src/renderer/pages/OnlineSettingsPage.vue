@@ -30,7 +30,10 @@
 
             <div class="provider-actions">
               <n-button secondary @click="startEdit(endpoint)">编辑</n-button>
-              <n-button type="primary" :loading="activatingId === endpoint.id" @click="$emit('activate-endpoint', endpoint)">
+              <n-button v-if="activeId === endpoint.id" secondary disabled>
+                已启用
+              </n-button>
+              <n-button v-else type="primary" :loading="activatingId === endpoint.id" @click="$emit('activate-endpoint', endpoint)">
                 启动
               </n-button>
               <n-button secondary :loading="testingId === endpoint.id" @click="$emit('test-endpoint', endpoint)">
