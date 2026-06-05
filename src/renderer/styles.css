@@ -293,7 +293,8 @@ output {
 }
 
 .provider-list-view,
-.provider-edit-view {
+.provider-edit-view,
+.usage-config-view {
   display: grid;
   gap: 16px;
 }
@@ -336,9 +337,46 @@ output {
   flex-wrap: wrap;
 }
 
+.usage-summary {
+  color: var(--accent);
+  font-weight: 800;
+}
+
 .provider-actions {
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+.usage-template-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.7fr 1.1fr;
+  gap: 10px;
+}
+
+.code-editor textarea {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.usage-preview,
+.script-help {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfb;
+}
+
+.usage-preview strong {
+  color: var(--accent);
+}
+
+.form-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
 }
 
 .empty-provider {
@@ -411,7 +449,8 @@ output {
   .toolbar,
   .workspace,
   .settings-page,
-  .advanced-grid {
+  .advanced-grid,
+  .usage-template-grid {
     grid-template-columns: 1fr;
   }
 

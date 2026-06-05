@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('translator', {
   translateOnline: (payload) => ipcRenderer.invoke('translator:translate-online', payload),
   fetchOnlineModels: (endpoint) => ipcRenderer.invoke('translator:fetch-online-models', endpoint),
   testOnlineEndpoint: (endpoint) => ipcRenderer.invoke('translator:test-online-endpoint', endpoint),
-  fetchUsage: (endpoint) => ipcRenderer.invoke('translator:fetch-usage', endpoint),
+  testUsageConfig: (endpoint) => ipcRenderer.invoke('translator:test-usage-config', endpoint),
   activateOnlineEndpoint: (endpoint) => ipcRenderer.invoke('translator:activate-online-endpoint', endpoint),
   getShortcut: () => ipcRenderer.invoke('translator:get-shortcut'),
   hide: () => ipcRenderer.invoke('translator:hide'),

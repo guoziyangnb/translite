@@ -1,0 +1,200 @@
+<template>
+  <div class="usage-config-view">
+    <div class="panel-title">
+      <div>
+        <strong>配置用量查询</strong>
+        <p>为 {{ draft.name || '当前供应商' }} 配置余额查询脚本，测试通过后保存返回列表。</p>
+      </div>
+      <n-button secondary @click="$emit('cancel')">取消</n-button>
+    </div>
+
+    <div class="usage-template-grid">
+      <label>
+        <span>预设模板</span>
+        <n-select
+          v-model:value="draft.usageConfig.template"
+          :options="templateOptions"
+          @update:value="applyTemplate"
+        />
+      </label>
+      <label>
+        <span>超时时间（秒）</span>
+        <n-input v-model:value="draft.usageConfig.timeoutSeconds" placeholder="10" />
+      </label>
+      <label>
+        <span>自动查询间隔（分钟，0 表示不自动查询）</span>
+        <n-input v-model:value="draft.usageConfig.intervalMinutes" placeholder="0" />
+      </label>
+    </div>
+
+    <label>
+      <span>提取器代码</span>
+      <n-input
+        v-model:value="draft.usageConfig.script"
+        class="code-editor"
+        type="textarea"
+        :autosize="{ minRows: 18, maxRows: 24 }"
+      />
+    </label>
+
+    <div v-if="draft.usageConfig.lastResult" class="usage-preview">
+      <strong>剩余：{{ formatUsage(draft.usageConfig.lastResult) }}</strong>
+      <span v-if="draft.usageConfig.lastCheckedAt">最近刷新：{{ formatDate(draft.usageConfig.lastCheckedAt) }}</span>
+      <span v-if="draft.usageConfig.lastResult.planName">套餐：{{ draft.usageConfig.lastResult.planName }}</span>
+      <span v-if="draft.usageConfig.lastResult.extra">{{ draft.usageConfig.lastResult.extra }}</span>
+    </div>
+    <p v-if="formatError" class="form-error">{{ formatError }}</p>
+
+    <div class="script-help">
+      <strong>脚本编写说明：</strong>
+      <p>整个配置必须用 () 包裹，形成对象字面量表达式。变量 <code v-pre>{{apiKey}}</code> 和 <code v-pre>{{baseUrl}}</code> 会自动替换。</p>
+      <p>extractor 返回字段可包含 isValid、invalidMessage、remaining、unit、planName、total、used、extra。</p>
+    </div>
+
+    <div class="panel-actions">
+      <n-button secondary :loading="usageId === draft.id" @click="$emit('test', draft)">测试脚本</n-button>
+      <n-button secondary @click="formatScript">格式化</n-button>
+      <n-button secondary @click="$emit('cancel')">取消</n-button>
+      <n-button type="primary" :loading="saveLoading" @click="$emit('save', { ...draft })">保存配置</n-button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+
+const props = defineProps({
+  draft: { type: Object, required: true },
+  usageId: { type: String, default: '' },
+  saveLoading: { type: Boolean, default: false }
+});
+
+defineEmits(['cancel', 'save', 'test']);
+
+const formatError = ref('');
+
+const templates = {
+  custom: '',
+  general: `({
+    request: {
+      url: "{{baseUrl}}/v1/usage",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+      const unit = response?.unit ?? response?.quota?.unit ?? "CNY";
+      return {
+        isValid: response?.is_active ?? response?.isValid ?? true,
+        remaining,
+        unit
+      };
+    }
+  })`,
+  newapi: `({
+    request: {
+      url: "{{baseUrl}}/api/user/self",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      const data = response?.data ?? response;
+      return {
+        isValid: !response?.error,
+        remaining: data?.quota ?? data?.balance,
+        used: data?.used_quota,
+        unit: "CNY"
+      };
+    }
+  })`,
+  tokenPlan: `({
+    request: {
+      url: "{{baseUrl}}/v1/dashboard/billing/usage",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      return {
+        isValid: !response?.error,
+        total: response?.total_granted,
+        used: response?.total_used,
+        remaining: response?.total_available,
+        unit: "USD"
+      };
+    }
+  })`,
+  official: `({
+    request: {
+      url: "{{baseUrl}}/v1/usage",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      return {
+        isValid: !response?.error,
+        remaining: response?.balance ?? response?.remaining,
+        unit: response?.unit ?? "USD"
+      };
+    }
+  })`,
+  deepseek: `({
+    request: {
+      url: "{{baseUrl}}/v1/usage",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+      const unit = response?.unit ?? response?.quota?.unit ?? "CNY";
+      return {
+        isValid: response?.is_active ?? response?.isValid ?? true,
+        remaining,
+        unit
+      };
+    }
+  })`
+};
+
+const templateOptions = [
+  { label: '自定义', value: 'custom' },
+  { label: '通用模板', value: 'general' },
+  { label: 'NewAPI', value: 'newapi' },
+  { label: 'Token Plan', value: 'tokenPlan' },
+  { label: '官方', value: 'official' },
+  { label: 'DeepSeek', value: 'deepseek' }
+];
+
+function applyTemplate(value) {
+  if (value === 'custom') return;
+  props.draft.usageConfig.script = templates[value] || templates.general;
+}
+
+function formatScript() {
+  try {
+    const config = Function(`"use strict"; return ${props.draft.usageConfig.script}`)();
+    const request = JSON.stringify(config.request || {}, null, 6)
+      .replace(/"([^"]+)":/g, '$1:')
+      .replace(/^/gm, '    ');
+    const extractor = config.extractor?.toString() || 'function(response) { return response; }';
+    props.draft.usageConfig.script = `({
+  request: ${request.trimStart()},
+  extractor: ${extractor}
+})`;
+    formatError.value = '';
+  } catch (error) {
+    formatError.value = error.message || '脚本格式化失败';
+  }
+}
+
+function formatUsage(result) {
+  const remaining = result.remaining ?? result.balance ?? '-';
+  const unit = result.unit || 'CNY';
+  return `${remaining}${unit}`;
+}
+
+function formatDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+</script>

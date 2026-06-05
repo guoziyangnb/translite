@@ -45,15 +45,10 @@
           <span>Chat 路径</span>
           <n-input v-model:value="draft.chatPath" placeholder="/v1/chat/completions" />
         </label>
-        <label>
-          <span>用量查询路径</span>
-          <n-input v-model:value="draft.usagePath" placeholder="/v1/dashboard/billing/usage，可留空" />
-        </label>
       </div>
     </div>
 
     <div class="panel-actions">
-      <n-button secondary :loading="usageId === draft.id" @click="$emit('fetch-usage', draft)">查询用量</n-button>
       <n-button secondary :loading="testingId === draft.id" @click="$emit('test', draft)">
         <template #icon><Wifi :size="16" /></template>
         测试接口
@@ -72,9 +67,8 @@ defineProps({
   saveLoading: { type: Boolean, default: false },
   loadingModelsId: { type: String, default: '' },
   testingId: { type: String, default: '' },
-  usageId: { type: String, default: '' },
   modelOptions: { type: Function, required: true }
 });
 
-defineEmits(['cancel', 'save', 'fetch-models', 'test', 'fetch-usage']);
+defineEmits(['cancel', 'save', 'fetch-models', 'test']);
 </script>

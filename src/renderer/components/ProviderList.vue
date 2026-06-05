@@ -24,6 +24,12 @@
         <div class="provider-meta">
           <span>模型：{{ endpoint.model || '未选择' }}</span>
           <span>模型数：{{ endpoint.models?.length || 0 }}</span>
+          <span v-if="endpoint.usageConfig?.lastResult" class="usage-summary">
+            剩余：{{ formatUsage(endpoint.usageConfig.lastResult) }}
+          </span>
+          <span v-if="endpoint.usageConfig?.lastCheckedAt">
+            最近刷新：{{ formatDate(endpoint.usageConfig.lastCheckedAt) }}
+          </span>
         </div>
 
         <div class="provider-actions">
@@ -42,6 +48,10 @@
             <template #icon><Wifi :size="16" /></template>
             测试
           </n-button>
+          <n-button secondary @click="$emit('configure-usage', endpoint)">
+            <template #icon><WalletCards :size="16" /></template>
+            配置用量查询
+          </n-button>
           <n-button quaternary :loading="removingId === endpoint.id" @click="$emit('remove', endpoint.id)">
             <template #icon><Trash2 :size="16" /></template>
           </n-button>
@@ -57,7 +67,7 @@
 </template>
 
 <script setup>
-import { CircleCheck, Pencil, Plus, Trash2, Wifi } from 'lucide-vue-next';
+import { CircleCheck, Pencil, Plus, Trash2, WalletCards, Wifi } from 'lucide-vue-next';
 
 defineProps({
   endpoints: { type: Array, required: true },
@@ -68,5 +78,17 @@ defineProps({
   removingId: { type: String, default: '' }
 });
 
-defineEmits(['create', 'edit', 'activate', 'test', 'remove']);
+defineEmits(['create', 'edit', 'activate', 'test', 'configure-usage', 'remove']);
+
+function formatUsage(result) {
+  const remaining = result.remaining ?? result.balance ?? '-';
+  const unit = result.unit || 'CNY';
+  return `${remaining}${unit}`;
+}
+
+function formatDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
 </script>

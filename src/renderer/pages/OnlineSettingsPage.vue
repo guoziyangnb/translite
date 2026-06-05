@@ -11,25 +11,34 @@
         :removing-id="removingId"
         @create="startCreate"
         @edit="startEdit"
+        @configure-usage="startUsageConfig"
         @activate="$emit('activate-endpoint', $event)"
         @test="$emit('test-endpoint', $event)"
         @remove="$emit('remove-endpoint', $event)"
       />
 
       <ProviderEditor
-        v-else
+        v-else-if="view === 'edit'"
         :draft="draft"
         :editing="Boolean(editingId)"
         :save-loading="saveLoading"
         :loading-models-id="loadingModelsId"
         :testing-id="testingId"
-        :usage-id="usageId"
         :model-options="modelOptions"
         @cancel="backToList"
         @save="saveDraft"
         @fetch-models="$emit('fetch-models', $event)"
         @test="$emit('test-endpoint', $event)"
-        @fetch-usage="$emit('fetch-usage', $event)"
+      />
+
+      <UsageConfigEditor
+        v-else
+        :draft="draft"
+        :usage-id="usageId"
+        :save-loading="saveLoading"
+        @cancel="backToList"
+        @save="saveDraft"
+        @test="$emit('test-usage-config', $event)"
       />
     </article>
   </section>
@@ -39,6 +48,7 @@
 import { reactive, ref, watch } from 'vue';
 import ProviderEditor from '../components/ProviderEditor.vue';
 import ProviderList from '../components/ProviderList.vue';
+import UsageConfigEditor from '../components/UsageConfigEditor.vue';
 
 const props = defineProps({
   endpoints: { type: Array, required: true },
@@ -58,7 +68,7 @@ const emit = defineEmits([
   'fetch-models',
   'activate-endpoint',
   'test-endpoint',
-  'fetch-usage',
+  'test-usage-config',
   'remove-endpoint'
 ]);
 
@@ -75,9 +85,39 @@ function createEndpointDraft(source = {}) {
     model: source.model || '',
     modelsPath: source.modelsPath || '/v1/models',
     chatPath: source.chatPath || '/v1/chat/completions',
-    usagePath: source.usagePath || '',
+    usageConfig: createUsageConfig(source.usageConfig),
     models: Array.isArray(source.models) ? [...source.models] : []
   };
+}
+
+function createUsageConfig(source = {}) {
+  return {
+    template: source.template || 'deepseek',
+    timeoutSeconds: String(source.timeoutSeconds ?? 10),
+    intervalMinutes: String(source.intervalMinutes ?? 0),
+    script: source.script || defaultUsageScript(),
+    lastCheckedAt: source.lastCheckedAt || '',
+    lastResult: source.lastResult || null
+  };
+}
+
+function defaultUsageScript() {
+  return `({
+    request: {
+      url: "{{baseUrl}}/v1/usage",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+      const unit = response?.unit ?? response?.quota?.unit ?? "CNY";
+      return {
+        isValid: response?.is_active ?? response?.isValid ?? true,
+        remaining,
+        unit
+      };
+    }
+  })`;
 }
 
 function assignDraft(source = {}) {
@@ -96,6 +136,12 @@ function startEdit(endpoint) {
   view.value = 'edit';
 }
 
+function startUsageConfig(endpoint) {
+  editingId.value = endpoint.id;
+  assignDraft(endpoint);
+  view.value = 'usage';
+}
+
 function backToList() {
   view.value = 'list';
 }
@@ -108,7 +154,7 @@ function saveDraft(endpoint) {
 watch(
   () => props.endpoints,
   (endpoints) => {
-    if (view.value !== 'edit' || !editingId.value) return;
+    if ((view.value !== 'edit' && view.value !== 'usage') || !editingId.value) return;
     const latest = endpoints.find((endpoint) => endpoint.id === editingId.value);
     if (latest) assignDraft(latest);
   },

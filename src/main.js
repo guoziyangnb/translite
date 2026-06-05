@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, shell } = req
 const { Worker } = require('worker_threads');
 const fs = require('fs/promises');
 const path = require('path');
+const vm = require('vm');
 
 const isMac = process.platform === 'darwin';
 const shortcut = isMac ? 'Command+Shift+T' : 'Control+Shift+T';
@@ -38,10 +39,21 @@ function normalizeEndpoint(endpoint = {}) {
     model: endpoint.model || '',
     modelsPath: endpoint.modelsPath || '/v1/models',
     chatPath: endpoint.chatPath || '/v1/chat/completions',
-    usagePath: endpoint.usagePath || '',
+    usageConfig: normalizeUsageConfig(endpoint.usageConfig),
     models: Array.isArray(endpoint.models) ? endpoint.models : [],
     testResult: endpoint.testResult || '',
     usageResult: endpoint.usageResult || ''
+  };
+}
+
+function normalizeUsageConfig(config = {}) {
+  return {
+    template: config.template || 'deepseek',
+    timeoutSeconds: Number(config.timeoutSeconds ?? 10),
+    intervalMinutes: Number(config.intervalMinutes ?? 0),
+    script: config.script || '',
+    lastCheckedAt: config.lastCheckedAt || '',
+    lastResult: config.lastResult || null
   };
 }
 
@@ -266,20 +278,66 @@ async function translateOnline(payload) {
   return requestLLMTranslation(endpoint, payload);
 }
 
-async function fetchUsage(endpointInput) {
+function replaceUsageVariables(value, endpoint) {
+  if (typeof value === 'string') {
+    return value
+      .replaceAll('{{baseUrl}}', (endpoint.baseUrl || '').replace(/\/$/, ''))
+      .replaceAll('{{apiKey}}', endpoint.apiKey || '');
+  }
+  if (Array.isArray(value)) return value.map((item) => replaceUsageVariables(item, endpoint));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, replaceUsageVariables(item, endpoint)])
+    );
+  }
+  return value;
+}
+
+function evaluateUsageScript(script) {
+  if (!script?.trim()) throw new Error('请先填写用量查询脚本。');
+  const context = vm.createContext(Object.freeze({}));
+  const config = vm.runInContext(`"use strict";\n${script}`, context, { timeout: 1000 });
+  if (!config || typeof config !== 'object') throw new Error('脚本必须返回配置对象。');
+  if (!config.request || typeof config.request !== 'object') throw new Error('脚本缺少 request 配置。');
+  if (typeof config.extractor !== 'function') throw new Error('脚本缺少 extractor 函数。');
+  return config;
+}
+
+async function testUsageConfig(endpointInput) {
   const endpoint = normalizeEndpoint(endpointInput);
-  if (!endpoint.usagePath) throw new Error('当前接口未配置用量查询路径。');
-  const requestUrl = joinEndpoint(endpoint.baseUrl, endpoint.usagePath);
-  const response = await fetch(requestUrl, {
-    method: 'GET',
-    headers: getHeaders(endpoint)
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`查询用量失败 ${response.status}。请求地址：${requestUrl}。响应：${text.slice(0, 200)}`);
+  const usageConfig = normalizeUsageConfig(endpoint.usageConfig);
+  const config = evaluateUsageScript(usageConfig.script);
+  const request = replaceUsageVariables(config.request, endpoint);
+  if (!request.url) throw new Error('用量查询脚本缺少 request.url。');
+
+  const controller = new AbortController();
+  const timeout = Math.max(1, Number(usageConfig.timeoutSeconds) || 10) * 1000;
+  const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    return { usage: JSON.stringify(JSON.parse(text), null, 2) };
-  } catch {
-    return { usage: text };
+    const response = await fetch(request.url, {
+      method: request.method || 'GET',
+      headers: request.headers || {},
+      body: request.body === undefined ? undefined : JSON.stringify(request.body),
+      signal: controller.signal
+    });
+    const text = await response.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = text;
+    }
+    if (!response.ok) {
+      throw new Error(`用量查询失败 ${response.status}。请求地址：${request.url}。响应：${String(text).slice(0, 200)}`);
+    }
+    const usage = config.extractor(data);
+    if (!usage || typeof usage !== 'object') throw new Error('extractor 必须返回对象。');
+    return { usage, checkedAt: new Date().toISOString() };
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error(`用量查询超时，超过 ${timeout / 1000} 秒。`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -310,7 +368,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('translator:test-online-endpoint', (_event, endpoint) =>
     requestLLMTranslation(endpoint, { text: 'Hello', sourceLang: 'en', targetLang: 'zh' })
   );
-  ipcMain.handle('translator:fetch-usage', (_event, endpoint) => fetchUsage(endpoint));
+  ipcMain.handle('translator:test-usage-config', (_event, endpoint) => testUsageConfig(endpoint));
   ipcMain.handle('translator:activate-online-endpoint', async (_event, endpoint) => {
     const clean = normalizeEndpoint(endpoint);
     if (!clean.model) throw new Error('请先选择模型。');

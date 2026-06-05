@@ -63,7 +63,7 @@
         @fetch-models="fetchModels"
         @activate-endpoint="activateEndpoint"
         @test-endpoint="testEndpoint"
-        @fetch-usage="fetchUsage"
+        @test-usage-config="testUsageConfig"
         @remove-endpoint="removeEndpoint"
       />
 
@@ -168,6 +168,7 @@ function normalizeEndpoint(endpoint) {
   endpoint.modelsPath ||= '/v1/models';
   endpoint.chatPath ||= '/v1/chat/completions';
   endpoint.models ||= [];
+  endpoint.usageConfig ||= {};
   return endpoint;
 }
 
@@ -353,15 +354,19 @@ async function testEndpoint(endpoint) {
   }
 }
 
-async function fetchUsage(endpoint) {
-  if (!endpoint.usagePath?.trim()) {
-    showMessage('warning', '请先填写用量查询路径');
-    return;
-  }
+async function testUsageConfig(endpoint) {
   usageId.value = endpoint.id;
   try {
-    const result = await window.translator.fetchUsage(plain(endpoint));
-    showMessage('success', `用量查询成功：${String(result.usage).slice(0, 120)}`);
+    const result = await window.translator.testUsageConfig(plain(endpoint));
+    endpoint.usageConfig = {
+      ...(endpoint.usageConfig || {}),
+      lastCheckedAt: result.checkedAt,
+      lastResult: result.usage
+    };
+    await saveEndpoint(endpoint);
+    const remaining = result.usage?.remaining ?? result.usage?.balance ?? '-';
+    const unit = result.usage?.unit || 'CNY';
+    showMessage('success', `用量查询成功：剩余 ${remaining}${unit}`);
   } catch (error) {
     showMessage('error', error.message || '用量查询失败');
   } finally {
