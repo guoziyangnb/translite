@@ -59,8 +59,7 @@
         :usage-id="usageId"
         :removing-id="removingId"
         :model-options="modelOptions"
-        @add-endpoint="addEndpoint"
-        @save="saveSettings"
+        @save-endpoint="saveEndpoint"
         @fetch-models="fetchModels"
         @activate-endpoint="activateEndpoint"
         @test-endpoint="testEndpoint"
@@ -68,13 +67,12 @@
         @remove-endpoint="removeEndpoint"
       />
 
-      <footer class="actionbar">
+      <footer v-if="activeView === 'translate'" class="actionbar">
         <n-space>
           <n-button secondary @click="hideWindow">收起</n-button>
-          <n-button v-if="activeView === 'translate'" type="primary" :loading="translating" @click="translate">
+          <n-button type="primary" :loading="translating" @click="translate">
             翻译
           </n-button>
-          <n-button v-else type="primary" :loading="saveLoading" @click="saveSettings">保存设置</n-button>
         </n-space>
       </footer>
     </main>
@@ -295,16 +293,13 @@ async function loadLocalModel() {
   }
 }
 
-function addEndpoint() {
-  const id = `endpoint-${Date.now()}`;
-  settings.online.endpoints.push(normalizeEndpoint({
-    id,
-    name: `接口 ${settings.online.endpoints.length + 1}`,
-    baseUrl: '',
-    apiKey: '',
-    model: ''
-  }));
-  showMessage('warning', '已添加接口，请填写配置');
+async function saveEndpoint(endpoint) {
+  const clean = normalizeEndpoint(plain(endpoint));
+  const index = settings.online.endpoints.findIndex((item) => item.id === clean.id);
+  if (index >= 0) settings.online.endpoints[index] = clean;
+  else settings.online.endpoints.push(clean);
+  await saveSettings();
+  showMessage('success', '供应商已保存');
 }
 
 async function fetchModels(endpoint) {
@@ -359,6 +354,10 @@ async function testEndpoint(endpoint) {
 }
 
 async function fetchUsage(endpoint) {
+  if (!endpoint.usagePath?.trim()) {
+    showMessage('warning', '请先填写用量查询路径');
+    return;
+  }
   usageId.value = endpoint.id;
   try {
     const result = await window.translator.fetchUsage(plain(endpoint));
