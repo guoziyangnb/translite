@@ -25,7 +25,7 @@ const lightEditorTheme = EditorView.theme({
     minHeight: '390px',
     color: '#000000',
     backgroundColor: '#ffffff',
-    fontSize: '12px',
+    fontSize: '13px',
     borderRadius: '4px'
   },
   '.cm-scroller': {

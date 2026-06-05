@@ -174,18 +174,35 @@ function applyTemplate(value) {
 function formatScript() {
   try {
     const config = Function(`"use strict"; return ${props.draft.usageConfig.script}`)();
-    const request = JSON.stringify(config.request || {}, null, 6)
-      .replace(/"([^"]+)":/g, '$1:')
-      .replace(/^/gm, '    ');
-    const extractor = config.extractor?.toString() || 'function(response) { return response; }';
+    const request = stringifyObjectLiteral(config.request || {});
+    const extractor = normalizeFunctionSource(config.extractor?.toString() || 'function(response) { return response; }');
     props.draft.usageConfig.script = `({
-  request: ${request.trimStart()},
-  extractor: ${extractor}
+  request: ${indentContinuation(request, 2)},
+  extractor: ${indentContinuation(extractor, 2)}
 })`;
     formatError.value = '';
   } catch (error) {
     formatError.value = error.message || '脚本格式化失败';
   }
+}
+
+function stringifyObjectLiteral(value) {
+  return JSON.stringify(value, null, 2).replace(/"([^"]+)":/g, '$1:');
+}
+
+function normalizeFunctionSource(source) {
+  const lines = source.split('\n');
+  const indentSizes = lines
+    .slice(1)
+    .filter((line) => line.trim())
+    .map((line) => line.match(/^\s*/)[0].length);
+  const minIndent = indentSizes.length ? Math.min(...indentSizes) : 0;
+  return lines.map((line, index) => (index === 0 ? line.trim() : line.slice(minIndent))).join('\n');
+}
+
+function indentContinuation(source, spaces) {
+  const indent = ' '.repeat(spaces);
+  return source.split('\n').map((line, index) => (index === 0 ? line : `${indent}${line}`)).join('\n');
 }
 
 function formatUsage(result) {
