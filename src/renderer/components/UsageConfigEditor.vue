@@ -20,6 +20,22 @@
     </div>
 
     <template v-if="draft.usageConfig.enabled">
+      <div class="usage-endpoint-grid">
+        <label>
+          <span>请求地址（可选）</span>
+          <n-input v-model:value="draft.usageConfig.baseUrl" placeholder="留空则使用供应商地址" />
+        </label>
+        <label>
+          <span>API Key（可选）</span>
+          <n-input
+            v-model:value="draft.usageConfig.apiKey"
+            type="password"
+            show-password-on="click"
+            placeholder="留空则使用供应商地址"
+          />
+        </label>
+      </div>
+
       <div class="usage-template-grid">
         <label>
           <span>预设模板</span>

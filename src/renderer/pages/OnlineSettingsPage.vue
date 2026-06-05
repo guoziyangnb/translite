@@ -98,6 +98,8 @@ function createUsageConfig(source = {}) {
   const script = migrateUsageScript(source.script || defaultUsageScript(), source.template || 'deepseek');
   return {
     enabled: source.enabled ?? Boolean(source.lastCheckedAt || source.lastResult || source.lastError),
+    baseUrl: source.baseUrl || '',
+    apiKey: source.apiKey || '',
     template: source.template || 'deepseek',
     timeoutSeconds: String(source.timeoutSeconds ?? 10),
     intervalMinutes: String(source.intervalMinutes ?? 0),

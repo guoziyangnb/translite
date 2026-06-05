@@ -50,6 +50,8 @@ function normalizeUsageConfig(config = {}) {
   const script = migrateUsageScript(config.script || '', config.template || 'deepseek');
   return {
     enabled: config.enabled ?? Boolean(config.lastCheckedAt || config.lastResult || config.lastError),
+    baseUrl: config.baseUrl || '',
+    apiKey: config.apiKey || '',
     template: config.template || 'deepseek',
     timeoutSeconds: Number(config.timeoutSeconds ?? 10),
     intervalMinutes: Number(config.intervalMinutes ?? 0),
@@ -304,16 +306,21 @@ async function translateOnline(payload) {
   return requestLLMTranslation(endpoint, payload);
 }
 
-function replaceUsageVariables(value, endpoint) {
+function replaceUsageVariables(value, endpoint, context) {
+  const usageConfig = context ? null : normalizeUsageConfig(endpoint.usageConfig);
+  const currentContext = context || {
+    baseUrl: usageConfig.baseUrl || endpoint.baseUrl || '',
+    apiKey: usageConfig.apiKey || endpoint.apiKey || ''
+  };
   if (typeof value === 'string') {
     return value
-      .replaceAll('{{baseUrl}}', (endpoint.baseUrl || '').replace(/\/$/, ''))
-      .replaceAll('{{apiKey}}', endpoint.apiKey || '');
+      .replaceAll('{{baseUrl}}', currentContext.baseUrl.replace(/\/$/, ''))
+      .replaceAll('{{apiKey}}', currentContext.apiKey);
   }
-  if (Array.isArray(value)) return value.map((item) => replaceUsageVariables(item, endpoint));
+  if (Array.isArray(value)) return value.map((item) => replaceUsageVariables(item, endpoint, currentContext));
   if (value && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, replaceUsageVariables(item, endpoint)])
+      Object.entries(value).map(([key, item]) => [key, replaceUsageVariables(item, endpoint, currentContext)])
     );
   }
   return value;
