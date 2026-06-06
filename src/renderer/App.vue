@@ -1,3 +1,7 @@
+<!--
+组件作用：桌面翻译应用根组件，统一管理翻译页、本地设置页和线上供应商设置页。
+适用场景：应用启动后的主界面容器，负责全局状态、IPC 调用和页面级事件分发。
+-->
 <template>
   <n-config-provider :theme-overrides="themeOverrides">
     <main class="app-shell">
@@ -89,6 +93,9 @@ import ModeSwitch from './components/ModeSwitch.vue';
 import LocalSettingsPage from './pages/LocalSettingsPage.vue';
 import OnlineSettingsPage from './pages/OnlineSettingsPage.vue';
 import TranslatePage from './pages/TranslatePage.vue';
+import { findProviderPreset } from './const/providerPresets';
+import { getUsageTemplateScript, resolveUsageTemplateId } from './const/usageTemplates';
+import { formatUsageMessage, hasUsageStatus } from './utils/usageFormatter';
 
 const { message } = createDiscreteApi(['message']);
 
@@ -167,11 +174,88 @@ function plain(value) {
 
 // 旧配置和新增配置都通过这里补齐路径字段，避免页面逻辑分散判断。
 function normalizeEndpoint(endpoint) {
-  endpoint.modelsPath ||= '/v1/models';
-  endpoint.chatPath ||= '/v1/chat/completions';
+  endpoint.presetId ||= '';
+  endpoint.apiFormat ||= 'openai';
+  endpoint.modelsPath ||= '/models';
+  endpoint.chatPath ||= '/chat/completions';
   endpoint.models ||= [];
   endpoint.usageConfig ||= {};
+  migratePresetUsageConfig(endpoint);
   return endpoint;
+}
+
+// 旧版本可能把官方供应商保存成通用 /v1/usage 或空 custom 模板，这里按官方预设迁移到推荐模板。
+function migratePresetUsageConfig(endpoint) {
+  const preset = findProviderPreset(endpoint.presetId);
+  const usageConfig = endpoint.usageConfig || {};
+  const currentTemplate = resolveUsageTemplateId(usageConfig.template || preset?.usageTemplate);
+
+  if (!preset) {
+    endpoint.usageConfig = {
+      ...usageConfig,
+      template: currentTemplate,
+      script: usageConfig.script || getUsageTemplateScript(currentTemplate)
+    };
+    return;
+  }
+
+  const presetTemplate = resolveUsageTemplateId(preset.usageTemplate);
+  const hasCustomScript = Boolean(usageConfig.script?.trim());
+  const hasLegacyDefaultScript = Boolean(usageConfig.script?.includes('{{baseUrl}}/v1/usage'));
+  const shouldRefreshMiMoUsageScript =
+    endpoint.presetId === 'mimo' &&
+    currentTemplate === presetTemplate &&
+    usageConfig.script?.includes('{{baseUrl}}/models') &&
+    usageConfig.script?.includes('模型接口可用');
+  const hasLegacyOfficialStatusScript =
+    currentTemplate === 'officialStatus' &&
+    usageConfig.script?.includes('{{baseUrl}}/models') &&
+    usageConfig.script?.includes('模型接口可用');
+  const hasLegacyPresetStatusScript =
+    endpoint.presetId === 'mimo' &&
+    currentTemplate === 'officialStatus' &&
+    (!hasCustomScript || usageConfig.script?.includes('小米 MiMo 官方接口') || hasLegacyOfficialStatusScript);
+  const shouldUsePresetTemplate =
+    currentTemplate !== presetTemplate &&
+    (
+      hasLegacyPresetStatusScript ||
+      ((currentTemplate === 'general' || currentTemplate === 'official') && (!hasCustomScript || hasLegacyDefaultScript)) ||
+      (currentTemplate === 'custom' && !hasCustomScript)
+    );
+
+  if (shouldRefreshMiMoUsageScript) {
+    endpoint.usageConfig = {
+      ...usageConfig,
+      template: presetTemplate,
+      script: preset.usageConfig?.script || getUsageTemplateScript(presetTemplate),
+      baseUrl: usageConfig.baseUrl || preset.usageConfig?.baseUrl || '',
+      apiKey: usageConfig.apiKey || '',
+      lastCheckedAt: '',
+      lastResult: null,
+      lastError: ''
+    };
+    return;
+  }
+
+  if (!shouldUsePresetTemplate) {
+    endpoint.usageConfig = {
+      ...usageConfig,
+      template: currentTemplate,
+      script: usageConfig.script || preset.usageConfig?.script || getUsageTemplateScript(currentTemplate)
+    };
+    return;
+  }
+
+  endpoint.usageConfig = {
+    ...usageConfig,
+    template: presetTemplate,
+    script: preset.usageConfig?.script || getUsageTemplateScript(presetTemplate),
+    baseUrl: usageConfig.baseUrl || preset.usageConfig?.baseUrl || '',
+    apiKey: usageConfig.apiKey || '',
+    lastCheckedAt: '',
+    lastResult: null,
+    lastError: ''
+  };
 }
 
 function showMessage(type, content) {
@@ -371,9 +455,11 @@ async function testUsageConfig(endpoint) {
   usageId.value = endpoint.id;
   try {
     const result = await refreshUsageConfig(endpoint);
-    const remaining = result.usage?.remaining ?? result.usage?.balance ?? '-';
-    const unit = result.usage?.unit || 'CNY';
-    showMessage('success', `用量查询成功：剩余 ${remaining}${unit}`);
+    if (hasUsageStatus(result.usage)) {
+      showMessage('success', `用量查询成功：${formatUsageMessage(result.usage)}`);
+    } else {
+      showMessage('warning', '用量查询成功，但未提取到剩余额度，请检查 extractor 返回的 remaining 或 balance。');
+    }
   } catch (error) {
     showMessage('error', error.message || '用量查询失败');
   } finally {
@@ -385,9 +471,11 @@ async function testUsageConfigDraft(endpoint) {
   usageId.value = endpoint.id;
   try {
     const result = await window.translator.testUsageConfig(plain(endpoint));
-    const remaining = result.usage?.remaining ?? result.usage?.balance ?? '-';
-    const unit = result.usage?.unit || 'CNY';
-    showMessage('success', `测试脚本通过：剩余 ${remaining}${unit}`);
+    if (hasUsageStatus(result.usage)) {
+      showMessage('success', `测试脚本通过：${formatUsageMessage(result.usage)}`);
+    } else {
+      showMessage('warning', '测试脚本通过，但未提取到剩余额度，请检查 extractor 返回的 remaining 或 balance。');
+    }
   } catch (error) {
     showMessage('error', error.message || '测试脚本失败');
   } finally {
@@ -417,9 +505,9 @@ async function saveUsageConfig(endpoint, done) {
   usageId.value = endpoint.id;
   try {
     const result = await refreshUsageConfig(endpoint);
-    const remaining = result.usage?.remaining ?? result.usage?.balance ?? '-';
-    const unit = result.usage?.unit || 'CNY';
-    showMessage('success', `用量查询配置已保存：剩余 ${remaining}${unit}`);
+    const usageLabel = formatUsageMessage(result.usage);
+    const messageType = hasUsageStatus(result.usage) ? 'success' : 'warning';
+    showMessage(messageType, `用量查询配置已保存：${usageLabel}`);
     done?.();
   } catch (error) {
     endpoint.usageConfig = {

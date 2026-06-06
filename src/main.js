@@ -7,6 +7,7 @@ const vm = require('vm');
 const isMac = process.platform === 'darwin';
 const shortcut = isMac ? 'Command+Shift+T' : 'Control+Shift+T';
 const defaultModelId = 'onnx-community/HY-MT1.5-1.8B-ONNX';
+const defaultUsageTemplate = 'officialStatus';
 
 let mainWindow;
 let settingsPath;
@@ -33,12 +34,14 @@ function getDefaultSettings() {
 function normalizeEndpoint(endpoint = {}) {
   return {
     id: endpoint.id || `endpoint-${Date.now()}`,
+    presetId: endpoint.presetId || '',
     name: endpoint.name || '未命名接口',
     baseUrl: endpoint.baseUrl || endpoint.url || '',
     apiKey: endpoint.apiKey || endpoint.key || '',
+    apiFormat: endpoint.apiFormat || 'openai',
     model: endpoint.model || '',
-    modelsPath: endpoint.modelsPath || '/v1/models',
-    chatPath: endpoint.chatPath || '/v1/chat/completions',
+    modelsPath: endpoint.modelsPath || '/models',
+    chatPath: endpoint.chatPath || '/chat/completions',
     usageConfig: normalizeUsageConfig(endpoint.usageConfig),
     models: Array.isArray(endpoint.models) ? endpoint.models : [],
     testResult: endpoint.testResult || '',
@@ -47,12 +50,13 @@ function normalizeEndpoint(endpoint = {}) {
 }
 
 function normalizeUsageConfig(config = {}) {
-  const script = migrateUsageScript(config.script || '', config.template || 'deepseek');
+  const template = config.template || defaultUsageTemplate;
+  const script = migrateUsageScript(config.script || '', template);
   return {
     enabled: config.enabled ?? Boolean(config.lastCheckedAt || config.lastResult || config.lastError),
     baseUrl: config.baseUrl || '',
     apiKey: config.apiKey || '',
-    template: config.template || 'deepseek',
+    template,
     timeoutSeconds: Number(config.timeoutSeconds ?? 10),
     intervalMinutes: Number(config.intervalMinutes ?? 0),
     script,
@@ -63,6 +67,93 @@ function normalizeUsageConfig(config = {}) {
 }
 
 function migrateUsageScript(script, template) {
+  if (!script?.trim() && template === 'mimoUsage') {
+    return `({
+    request: {
+      url: "{{baseUrl}}/chat/completions",
+      method: "POST",
+      headers: {
+        "api-key": "{{apiKey}}",
+        "Content-Type": "application/json"
+      },
+      body: {
+        model: "mimo-v2.5-pro",
+        messages: [
+          { role: "user", content: "Hi" }
+        ],
+        max_completion_tokens: 8,
+        stream: false,
+        thinking: {
+          type: "disabled"
+        }
+      }
+    },
+    extractor: function(response) {
+      const usage = response?.usage || {};
+      const prompt = usage.prompt_tokens ?? usage.promptTokens;
+      const completion = usage.completion_tokens ?? usage.completionTokens;
+      const total = usage.total_tokens ?? usage.totalTokens;
+      const hasTokenUsage = total !== undefined || prompt !== undefined || completion !== undefined;
+      return {
+        isValid: !response?.error,
+        planName: "小米 MiMo 官方用量",
+        metricLabel: "本次请求用量",
+        used: total,
+        unit: "tokens",
+        extra: hasTokenUsage
+          ? "Prompt：" + (prompt ?? "-") + "，Completion：" + (completion ?? "-")
+          : "接口调用成功，但响应中没有返回 usage 字段。"
+      };
+    }
+  })`;
+  }
+  if (!script?.trim() && ['officialStatus', 'openaiStatus', 'geminiStatus'].includes(template)) {
+    return `({
+    request: {
+      url: "{{baseUrl}}/models",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      const models = Array.isArray(response?.data)
+        ? response.data
+        : Array.isArray(response?.models)
+          ? response.models
+          : [];
+      const names = models.map((item) => typeof item === "string" ? item : item.id || item.name || item.model).filter(Boolean);
+      return {
+        isValid: !response?.error,
+        planName: "官方接口",
+        extra: names.length
+          ? "模型接口可用；官方暂未公开余额查询 API。可用模型：" + names.slice(0, 3).join("、")
+          : "模型接口可用；官方暂未公开余额查询 API。"
+      };
+    }
+  })`;
+  }
+  if (!script?.trim() && template === 'anthropicStatus') {
+    return `({
+    request: {
+      url: "{{baseUrl}}/models",
+      method: "GET",
+      headers: {
+        "x-api-key": "{{apiKey}}",
+        "anthropic-version": "2023-06-01"
+      }
+    },
+    extractor: function(response) {
+      const models = Array.isArray(response?.data) ? response.data : [];
+      const names = models.map((item) => typeof item === "string" ? item : item.id || item.name).filter(Boolean);
+      return {
+        isValid: !response?.error,
+        planName: "Claude 官方接口",
+        extra: names.length
+          ? "模型接口可用；官方余额需通过控制台查看。可用模型：" + names.slice(0, 3).join("、")
+          : "模型接口可用；官方余额需通过控制台查看。"
+      };
+    }
+  })`;
+  }
   if (template === 'deepseek' && script.includes('{{baseUrl}}/v1/usage')) {
     return `({
     request: {
@@ -220,6 +311,14 @@ function joinEndpoint(baseUrl, pathValue) {
 }
 
 function getHeaders(endpoint) {
+  if (endpoint.apiFormat === 'anthropic') {
+    return {
+      'Content-Type': 'application/json',
+      'anthropic-version': '2023-06-01',
+      ...(endpoint.apiKey ? { 'x-api-key': endpoint.apiKey } : {})
+    };
+  }
+
   return {
     'Content-Type': 'application/json',
     ...(endpoint.apiKey ? { Authorization: `Bearer ${endpoint.apiKey}` } : {})
@@ -258,9 +357,8 @@ async function fetchOnlineModels(endpointInput) {
     headers: getHeaders(endpoint)
   });
   const data = await readJsonResponse(response, requestUrl, '获取模型列表');
-  const models = Array.isArray(data.data)
-    ? data.data.map((item) => item.id || item.name).filter(Boolean)
-    : [];
+  const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
+  const models = list.map((item) => (typeof item === 'string' ? item : item.id || item.name || item.model)).filter(Boolean);
   if (models.length === 0) {
     throw new Error(`接口返回成功，但没有识别到模型列表 data[].id。实际请求地址：${requestUrl}`);
   }
@@ -274,6 +372,34 @@ async function requestLLMTranslation(endpointInput, { text, sourceLang, targetLa
   if (!endpoint.model) throw new Error('请先选择模型并保存。');
 
   const requestUrl = joinEndpoint(endpoint.baseUrl, endpoint.chatPath);
+  if (endpoint.apiFormat === 'anthropic') {
+    const response = await fetch(requestUrl, {
+      method: 'POST',
+      headers: getHeaders(endpoint),
+      body: JSON.stringify({
+        model: endpoint.model,
+        max_tokens: 1200,
+        system: `You are a translation engine. Translate the user's text to ${targetLang || 'zh'}. Return only the translated text.`,
+        messages: [
+          {
+            role: 'user',
+            content: sourceLang && sourceLang !== 'auto'
+              ? `Source language: ${sourceLang}\nText:\n${trimmed}`
+              : trimmed
+          }
+        ]
+      })
+    });
+    const data = await readJsonResponse(response, requestUrl, '调用大模型接口');
+    const translatedText = Array.isArray(data.content)
+      ? data.content.map((item) => item.text || '').join('').trim()
+      : '';
+    return {
+      translatedText,
+      provider: endpoint.name || endpoint.baseUrl
+    };
+  }
+
   const response = await fetch(requestUrl, {
     method: 'POST',
     headers: getHeaders(endpoint),

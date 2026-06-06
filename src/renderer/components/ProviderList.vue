@@ -1,3 +1,7 @@
+<!--
+组件作用：展示线上翻译供应商列表，并提供编辑、启用、测试、用量查询配置和刷新入口。
+适用场景：线上设置页的供应商列表视图，父组件负责传入数据和处理操作事件。
+-->
 <template>
   <div class="provider-list-view">
     <div class="panel-title">
@@ -45,9 +49,24 @@
             <n-tag v-if="endpoint.usageConfig?.lastError" type="error" size="small" round>
               查询失败
             </n-tag>
-            <strong v-else class="usage-summary">
+            <strong v-else-if="formatUsageMetric(endpoint.usageConfig?.lastResult)" class="usage-summary">
+              {{ formatUsageMetric(endpoint.usageConfig?.lastResult) }}
+            </strong>
+            <strong v-else-if="hasRemaining(endpoint.usageConfig?.lastResult)" class="usage-summary">
               剩余：{{ formatUsage(endpoint.usageConfig?.lastResult) }}
             </strong>
+            <strong v-else-if="formatUsageMeta(endpoint.usageConfig?.lastResult)" class="usage-summary">
+              查询通过
+            </strong>
+            <n-tag v-else type="warning" size="small" round>
+              未提取到余额
+            </n-tag>
+            <span
+              v-if="formatUsageMeta(endpoint.usageConfig?.lastResult)"
+              class="usage-extra"
+            >
+              {{ formatUsageMeta(endpoint.usageConfig.lastResult) }}
+            </span>
             <n-button
               tertiary
               circle
@@ -102,6 +121,12 @@
 // 组件作用：展示线上翻译供应商列表，并提供编辑、启用、测试、用量查询配置和刷新入口。
 // 适用场景：线上设置页的供应商列表视图，父组件负责传入数据和处理操作事件。
 import { CircleCheck, Pencil, Plus, RefreshCw, Trash2, WalletCards, Wifi } from 'lucide-vue-next';
+import {
+  formatUsageExtra,
+  formatUsageMetric as formatMetric,
+  formatUsageRemaining,
+  hasUsageRemaining
+} from '../utils/usageFormatter';
 
 defineProps({
   // 供应商列表，默认由父页面从全局设置中传入。
@@ -124,9 +149,22 @@ defineEmits(['create', 'edit', 'activate', 'test', 'configure-usage', 'refresh-u
 
 // 格式化用量查询结果，兼容 remaining 和 balance 两种字段。
 function formatUsage(result) {
-  const remaining = result?.remaining ?? result?.balance ?? '-';
-  const unit = result?.unit || 'CNY';
-  return `${remaining}${unit}`;
+  return formatUsageRemaining(result);
+}
+
+// 展示非余额类用量，例如 MiMo 官方返回的本次请求 token 用量。
+function formatUsageMetric(result) {
+  return formatMetric(result);
+}
+
+// 判断是否有可展示的真实余额，过滤接口返回的 “-” 这类占位符。
+function hasRemaining(result) {
+  return hasUsageRemaining(result);
+}
+
+// 展示官方套餐、周限额等补充信息，没有补充字段则不占位。
+function formatUsageMeta(result) {
+  return formatUsageExtra(result);
 }
 
 // 格式化最近刷新时间，非法日期直接返回原始值。

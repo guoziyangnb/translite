@@ -304,6 +304,42 @@ output {
   gap: 12px;
 }
 
+.provider-preset-section {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfb;
+}
+
+.section-title {
+  display: grid;
+  gap: 4px;
+}
+
+.section-title span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.provider-preset-group {
+  display: grid;
+  gap: 8px;
+}
+
+.provider-preset-group > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.provider-preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .provider-card {
   display: grid;
   gap: 12px;
@@ -375,7 +411,8 @@ output {
   grid-template-columns: auto 32px;
   grid-template-areas:
     "date button"
-    "summary button";
+    "summary button"
+    "extra button";
   align-items: center;
   justify-content: center;
   column-gap: 8px;
@@ -394,6 +431,13 @@ output {
   grid-area: summary;
   color: var(--accent);
   font-weight: 800;
+}
+
+.usage-extra {
+  grid-area: extra;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .usage-status .n-tag {

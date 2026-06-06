@@ -1,9 +1,13 @@
+<!--
+组件作用：编辑单个供应商的用量查询配置，包括启用开关、请求凭证、模板和脚本。
+适用场景：线上设置页进入“配置用量查询”视图时使用，父组件负责保存和测试脚本。
+-->
 <template>
   <div class="usage-config-view">
     <div class="panel-title">
       <div>
         <strong>配置用量查询</strong>
-        <p>为 {{ draft.name || '当前供应商' }} 配置余额查询脚本，保存后才会在列表生效。</p>
+        <p>为 {{ draft.name || '当前供应商' }} 配置用量或余额查询脚本，保存后才会在列表生效。</p>
       </div>
       <n-button secondary @click="$emit('cancel')">取消</n-button>
     </div>
@@ -58,7 +62,7 @@
       <div class="code-field">
         <span class="code-field-heading">
           <span>提取器代码</span>
-          <small>返回对象需包含剩余额度等字段</small>
+          <small>返回对象可包含剩余额度、用量指标或状态信息</small>
         </span>
         <CodeEditor
           v-model:value="draft.usageConfig.script"
@@ -66,7 +70,12 @@
       </div>
 
       <div v-if="draft.usageConfig.lastResult" class="usage-preview">
-        <strong>剩余：{{ formatUsage(draft.usageConfig.lastResult) }}</strong>
+        <strong v-if="formatUsageMetric(draft.usageConfig.lastResult)">
+          {{ formatUsageMetric(draft.usageConfig.lastResult) }}
+        </strong>
+        <strong v-else-if="hasRemaining(draft.usageConfig.lastResult)">剩余：{{ formatUsage(draft.usageConfig.lastResult) }}</strong>
+        <strong v-else-if="formatUsageMeta(draft.usageConfig.lastResult)">查询通过</strong>
+        <strong v-else>未提取到余额</strong>
         <span v-if="draft.usageConfig.lastCheckedAt">最近刷新：{{ formatDate(draft.usageConfig.lastCheckedAt) }}</span>
         <span v-if="draft.usageConfig.lastResult.planName">套餐：{{ draft.usageConfig.lastResult.planName }}</span>
         <span v-if="draft.usageConfig.lastResult.extra">{{ draft.usageConfig.lastResult.extra }}</span>
@@ -77,7 +86,7 @@
       <div class="script-help">
         <strong>脚本编写说明：</strong>
         <p>整个配置必须用 () 包裹，形成对象字面量表达式。变量 <code v-pre>{{apiKey}}</code> 和 <code v-pre>{{baseUrl}}</code> 会自动替换。</p>
-        <p>extractor 返回字段可包含 isValid、invalidMessage、remaining、unit、planName、total、used、extra。</p>
+        <p>extractor 返回字段可包含 isValid、invalidMessage、remaining、unit、metricLabel、planName、total、used、extra。</p>
       </div>
     </template>
 
@@ -91,12 +100,25 @@
 </template>
 
 <script setup>
+// 组件作用：编辑单个供应商的用量查询配置，包括启用开关、请求凭证、模板和脚本。
+// 适用场景：线上设置页进入“配置用量查询”视图时使用，父组件负责保存和测试脚本。
 import { ref } from 'vue';
 import CodeEditor from './CodeEditor.vue';
+import { findProviderPreset } from '../const/providerPresets';
+import { getUsageTemplateScript, USAGE_TEMPLATE_OPTIONS } from '../const/usageTemplates';
+import {
+  formatUsageExtra,
+  formatUsageMetric as formatMetric,
+  formatUsageRemaining,
+  hasUsageRemaining
+} from '../utils/usageFormatter';
 
 const props = defineProps({
+  // 当前供应商草稿，默认包含 usageConfig 配置对象。
   draft: { type: Object, required: true },
+  // 正在测试用量脚本的供应商 id，默认空字符串。
   usageId: { type: String, default: '' },
+  // 保存配置按钮 loading 状态，默认 false。
   saveLoading: { type: Boolean, default: false }
 });
 
@@ -104,101 +126,17 @@ defineEmits(['cancel', 'save', 'test']);
 
 const formatError = ref('');
 
-const templates = {
-  custom: '',
-  general: `({
-    request: {
-      url: "{{baseUrl}}/v1/usage",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "CNY";
-      return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
-        remaining,
-        unit
-      };
-    }
-  })`,
-  newapi: `({
-    request: {
-      url: "{{baseUrl}}/api/user/self",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      const data = response?.data ?? response;
-      return {
-        isValid: !response?.error,
-        remaining: data?.quota ?? data?.balance,
-        used: data?.used_quota,
-        unit: "CNY"
-      };
-    }
-  })`,
-  tokenPlan: `({
-    request: {
-      url: "{{baseUrl}}/v1/dashboard/billing/usage",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      return {
-        isValid: !response?.error,
-        total: response?.total_granted,
-        used: response?.total_used,
-        remaining: response?.total_available,
-        unit: "USD"
-      };
-    }
-  })`,
-  official: `({
-    request: {
-      url: "{{baseUrl}}/v1/usage",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      return {
-        isValid: !response?.error,
-        remaining: response?.balance ?? response?.remaining,
-        unit: response?.unit ?? "USD"
-      };
-    }
-  })`,
-  deepseek: `({
-    request: {
-      url: "{{baseUrl}}/user/balance",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      const balances = response?.balance_infos || [];
-      const cny = balances.find((item) => item.currency === "CNY") || balances[0] || {};
-      const remaining = cny.total_balance ?? cny.granted_balance ?? cny.topped_up_balance;
-      return {
-        isValid: response?.is_available ?? true,
-        remaining,
-        unit: cny.currency || "CNY"
-      };
-    }
-  })`
-};
-
-const templateOptions = [
-  { label: '自定义', value: 'custom' },
-  { label: '通用模板', value: 'general' },
-  { label: 'NewAPI', value: 'newapi' },
-  { label: 'Token Plan', value: 'tokenPlan' },
-  { label: '官方', value: 'official' },
-  { label: 'DeepSeek', value: 'deepseek' }
-];
+const templateOptions = USAGE_TEMPLATE_OPTIONS;
 
 function applyTemplate(value) {
   if (value === 'custom') return;
-  props.draft.usageConfig.script = templates[value] || templates.general;
+  const preset = findProviderPreset(props.draft.presetId);
+  if (preset?.usageTemplate === value && preset.usageConfig?.script) {
+    props.draft.usageConfig.baseUrl ||= preset.usageConfig.baseUrl || '';
+    props.draft.usageConfig.script = preset.usageConfig.script;
+    return;
+  }
+  props.draft.usageConfig.script = getUsageTemplateScript(value);
 }
 
 function formatScript() {
@@ -236,9 +174,19 @@ function indentContinuation(source, spaces) {
 }
 
 function formatUsage(result) {
-  const remaining = result.remaining ?? result.balance ?? '-';
-  const unit = result.unit || 'CNY';
-  return `${remaining}${unit}`;
+  return formatUsageRemaining(result);
+}
+
+function formatUsageMetric(result) {
+  return formatMetric(result);
+}
+
+function hasRemaining(result) {
+  return hasUsageRemaining(result);
+}
+
+function formatUsageMeta(result) {
+  return formatUsageExtra(result);
 }
 
 function formatDate(value) {
