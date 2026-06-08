@@ -43,6 +43,7 @@
         :local-load-loading="localLoadLoading"
         :local-download-loading="localDownloadLoading"
         :local-busy="localBusy"
+        :show-download-progress="showLocalDownloadProgress"
         :download-progress="downloadProgress"
         :local-progress-label="localProgressLabel"
         @choose-directory="chooseModelDirectory"
@@ -76,9 +77,10 @@
       <footer v-if="activeView === 'translate'" class="actionbar">
         <n-space>
           <n-button secondary @click="hideWindow">收起</n-button>
-          <n-button type="primary" :loading="translating" @click="translate">
+          <n-button type="primary" :loading="translating" :disabled="translating" @click="translate">
             翻译
           </n-button>
+          <n-button v-if="translating" type="warning" secondary @click="cancelTranslation">取消</n-button>
         </n-space>
       </footer>
     </main>
@@ -86,7 +88,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { createDiscreteApi } from 'naive-ui';
 import AppHeader from './components/AppHeader.vue';
 import ModeSwitch from './components/ModeSwitch.vue';
@@ -108,11 +110,14 @@ const targetLang = ref('zh');
 const shortcutLabel = ref('Ctrl + Shift + T');
 
 const translating = ref(false);
+const activeTranslationId = ref(0);
+const cancelledTranslationIds = new Set();
 const saveLoading = ref(false);
 const chooseDirLoading = ref(false);
 const localLoadLoading = ref(false);
 const localDownloadLoading = ref(false);
 const localBusy = ref(false);
+const showLocalDownloadProgress = ref(false);
 const loadingModelsId = ref('');
 const activatingId = ref('');
 const testingId = ref('');
@@ -121,7 +126,7 @@ const removingId = ref('');
 const modeLoading = ref('');
 
 const downloadProgress = ref(0);
-const localProgressLabel = ref('未加载');
+const localProgressLabel = ref('');
 
 const settings = reactive({
   mode: 'local',
@@ -159,7 +164,6 @@ const themeOverrides = {
   }
 };
 
-let debounceTimer;
 let removeProgressListener;
 
 const pageTitle = computed(() => {
@@ -348,20 +352,25 @@ async function downloadLocalModel() {
   if (!ensureModelPath()) return;
   localDownloadLoading.value = true;
   localBusy.value = true;
+  showLocalDownloadProgress.value = true;
   downloadProgress.value = 0;
-  localProgressLabel.value = '准备下载模型';
+  localProgressLabel.value = '正在下载模型';
   try {
     await window.translator.downloadLocalModel(plain(settings.local));
     settings.local.loaded = true;
     await saveSettings();
     downloadProgress.value = 100;
-    localProgressLabel.value = '模型已就绪';
     showMessage('success', '模型已下载并加载');
   } catch (error) {
     showMessage('error', error.message || '模型下载失败');
   } finally {
     localDownloadLoading.value = false;
     localBusy.value = false;
+    window.setTimeout(() => {
+      showLocalDownloadProgress.value = false;
+      downloadProgress.value = 0;
+      localProgressLabel.value = '';
+    }, 350);
   }
 }
 
@@ -369,13 +378,10 @@ async function loadLocalModel() {
   if (!ensureModelPath()) return;
   localLoadLoading.value = true;
   localBusy.value = true;
-  localProgressLabel.value = '正在加载本地模型';
   try {
     await window.translator.loadLocalModel(plain(settings.local));
     settings.local.loaded = true;
     await saveSettings();
-    downloadProgress.value = 100;
-    localProgressLabel.value = '模型已就绪';
     showMessage('success', '本地模型已加载');
   } catch (error) {
     showMessage('error', error.message || '本地模型加载失败');
@@ -544,6 +550,7 @@ async function refreshUsageConfig(endpoint) {
 }
 
 async function translate() {
+  if (translating.value) return;
   const text = sourceText.value.trim();
   if (!text) {
     translatedText.value = '';
@@ -551,7 +558,12 @@ async function translate() {
     focusSourceInput();
     return;
   }
+
+  const translationId = activeTranslationId.value + 1;
+  activeTranslationId.value = translationId;
+  cancelledTranslationIds.delete(translationId);
   translating.value = true;
+
   try {
     const payload = {
       text,
@@ -564,20 +576,24 @@ async function translate() {
       settings.mode === 'local'
         ? await window.translator.translateLocal(plain(payload))
         : await window.translator.translateOnline(plain(payload));
+
+    if (cancelledTranslationIds.has(translationId) || activeTranslationId.value !== translationId) return;
     translatedText.value = response.translatedText;
     showMessage('success', '翻译完成');
   } catch (error) {
+    if (cancelledTranslationIds.has(translationId) || activeTranslationId.value !== translationId) return;
     showMessage('error', error.message || '翻译失败');
   } finally {
-    translating.value = false;
+    cancelledTranslationIds.delete(translationId);
+    if (activeTranslationId.value === translationId) translating.value = false;
   }
 }
 
-function scheduleTranslate() {
-  window.clearTimeout(debounceTimer);
-  debounceTimer = window.setTimeout(() => {
-    if (activeView.value === 'translate' && sourceText.value.trim()) translate();
-  }, 750);
+function cancelTranslation() {
+  if (!translating.value) return;
+  cancelledTranslationIds.add(activeTranslationId.value);
+  translating.value = false;
+  showMessage('warning', '已取消本次翻译');
 }
 
 function clearText() {
@@ -604,7 +620,6 @@ function swapLanguages() {
   targetLang.value = oldSource;
   focusSourceInput();
   showMessage('warning', '语言已交换');
-  if (sourceText.value.trim()) translate();
 }
 
 function hideWindow() {
@@ -615,19 +630,21 @@ function onKeydown(event) {
   if (event.key === 'Escape') hideWindow();
 }
 
-watch(sourceText, scheduleTranslate);
 
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
   window.translator.onFocusInput(focusSourceInput);
   removeProgressListener = window.translator.onLocalProgress((messageData) => {
     if (messageData.type === 'progress') {
+      if (!showLocalDownloadProgress.value) return;
       downloadProgress.value = messageData.progress || 0;
       localProgressLabel.value = messageData.file
         ? `${messageData.status || '处理中'}：${messageData.file}`
         : messageData.status || '处理中';
     } else if (messageData.type === 'status') {
-      showMessage('warning', messageData.message);
+      if (showLocalDownloadProgress.value) {
+        localProgressLabel.value = '正在下载模型';
+      }
     }
   });
   const [shortcut, savedSettings] = await Promise.all([

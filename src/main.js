@@ -266,6 +266,16 @@ function getLocalWorker() {
   if (localWorker) return localWorker;
 
   localWorker = new Worker(path.join(__dirname, 'localTranslator.node.js'));
+  localWorker.on('error', (error) => {
+    const message = error?.message === 'fetch failed'
+      ? '本地模型下载失败：无法连接模型下载源。请检查网络、代理或稍后重试。'
+      : error?.message || '本地模型处理失败';
+    for (const pending of pendingRequests.values()) {
+      pending.reject(new Error(message));
+    }
+    pendingRequests.clear();
+    localWorker = null;
+  });
   localWorker.on('message', (message) => {
     if (message.type === 'progress' || message.type === 'status') {
       mainWindow?.webContents.send('translator:local-progress', message);

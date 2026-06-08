@@ -11,7 +11,7 @@
       </n-tag>
       <n-button secondary @click="$emit('toggle-settings')">
         <template #icon><Settings :size="16" /></template>
-        {{ activeView === 'translate' ? '设置' : '返回翻译' }}
+        {{ activeView === 'translate' ? '翻译设置' : '返回翻译' }}
       </n-button>
     </div>
   </header>
