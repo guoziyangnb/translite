@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="./README.zh-CN.md">中文</a> · <strong>English</strong>
+  <a href="./README.zh-CN.md">中文</a> · <a><strong>English</strong></a>
 </p>
 
 ## Overview
@@ -30,8 +30,8 @@ TransLite is a lightweight desktop translation app for fast translation, offline
 <p align="center">
   <table>
     <tr>
-      <td align="center"><b>Translate Workspace</b><br><img src="docs/snipaste/image1.png" width="400" /></td>
-      <td align="center"><b>Provider Settings</b><br><img src="docs/snipaste/image2.png" width="400" /></td>
+      <td align="center"><b>Translate Workspace</b><br><img src="docs/snipaste/image1.png" width="420" /></td>
+      <td align="center"><b>Provider Settings</b><br><img src="docs/snipaste/image2.png" width="420" /></td>
     </tr>
   </table>
 </p>
@@ -50,7 +50,7 @@ TransLite is a lightweight desktop translation app for fast translation, offline
 
 ## Provider Presets
 
-Domestic presets:
+**Domestic presets**:
 
 - DeepSeek
 - GLM
@@ -70,7 +70,7 @@ Domestic presets:
 - LongCat
 - Bailing
 
-International presets:
+**International presets**:
 
 - GPT / OpenAI
 - Claude
@@ -153,12 +153,6 @@ Start Electron in another terminal:
 npm start
 ```
 
-Build renderer:
-
-```bash
-npm run build
-```
-
 ## Configuration Storage
 
 TransLite has no backend or database. Desktop settings are stored under Electron's local user data directory:
@@ -189,3 +183,35 @@ See [LICENSE](./LICENSE).
 ## Acknowledgements
 
 - [echosoar/local-trans](https://github.com/echosoar/local-trans): reference project for the local model translation direction.
+
+## Community & Support
+
+If TransLite makes your life easier, consider supporting the journey.
+
+<div align="center">
+  <table style="border: none;">
+    <tr>
+      <td align="center" style="border: none;">
+        <p><strong>WeChat</strong></p>
+        <img src="docs/images/wx.jpg" alt="WeChat" width="180" />
+      </td>
+      <td align="center" style="border: none;">
+        <p><strong>Alipay</strong></p>
+        <img src="docs/images/zfb.jpg" alt="Alipay" width="180" />
+      </td>
+      <!-- <td align="center" style="border: none;">
+        <p><strong>QQ Group</strong></p>
+        <img src="docs/images/qq.jpeg" alt="QQ Group" width="180" height="180" />
+      </td> -->
+    </tr>
+  </table>
+  <br>
+  <!-- <p>Your support keeps the project active and the developer caffeinated!</p>
+  <a href="https://tiez.name666.top/zh/sponsors.html"><strong>View Sponsor List</strong></a> -->
+</div>
+
+---
+
+<div align="center">
+  <b>Please consider leaving a Star if you find this project useful.</b>
+</div>
