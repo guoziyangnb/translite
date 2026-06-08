@@ -1,7 +1,7 @@
 <template>
   <header class="topbar">
     <div>
-      <p class="eyebrow">Light Translator</p>
+      <p class="eyebrow">TransLite</p>
       <h1>{{ title }}</h1>
     </div>
     <div class="top-actions">

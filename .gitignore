@@ -3,3 +3,8 @@ dist/
 out/
 *.log
 .env
+
+models/
+.vite-dev.log
+
+package-lock.json

@@ -8,6 +8,7 @@ const isMac = process.platform === 'darwin';
 const shortcut = isMac ? 'Command+Shift+T' : 'Control+Shift+T';
 const defaultModelId = 'onnx-community/HY-MT1.5-1.8B-ONNX';
 const defaultUsageTemplate = 'officialStatus';
+const appIconPath = path.join(__dirname, 'renderer', 'assets', 'translite-icon.png');
 
 let mainWindow;
 let settingsPath;
@@ -214,7 +215,8 @@ function createWindow() {
     minWidth: 900,
     minHeight: 660,
     show: false,
-    title: 'Light Translator',
+    title: 'TransLite',
+    icon: appIconPath,
     backgroundColor: '#f6f7f4',
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     webPreferences: {
@@ -512,6 +514,7 @@ async function selectDirectory(defaultPath) {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
+  if (isMac) app.dock?.setIcon(appIconPath);
   await readSettings();
   createWindow();
 

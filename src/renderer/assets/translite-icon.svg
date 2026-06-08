@@ -1,0 +1,20 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="TransLite icon">
+  <rect width="512" height="512" rx="112" fill="#F7FAFF"/>
+  <rect x="52" y="52" width="408" height="408" rx="92" fill="url(#paint0_linear)"/>
+  <path d="M145 156C145 143.85 154.85 134 167 134H279C291.15 134 301 143.85 301 156V246C301 258.15 291.15 268 279 268H213L171.5 308V268H167C154.85 268 145 258.15 145 246V156Z" fill="white"/>
+  <path d="M211 182H269" stroke="#165DFF" stroke-width="18" stroke-linecap="round"/>
+  <path d="M240 182C235 218 213 238 188 245" stroke="#165DFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M196 182C207 217 231 239 266 248" stroke="#165DFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M214 344C214 331.85 223.85 322 236 322H345C357.15 322 367 331.85 367 344V360C367 372.15 357.15 382 345 382H236C223.85 382 214 372.15 214 360V344Z" fill="#0F172A" fill-opacity="0.16"/>
+  <path d="M226 278C226 265.85 235.85 256 248 256H357C369.15 256 379 265.85 379 278V361C379 373.15 369.15 383 357 383H352V420L316 383H248C235.85 383 226 373.15 226 361V278Z" fill="#0F172A"/>
+  <path d="M268 346L297 286H313L342 346H323L318 334H291L286 346H268ZM297 319H312L304.5 300.5L297 319Z" fill="#7DD3FC"/>
+  <path d="M135 365L156 336L177 365" stroke="#7DD3FC" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M156 336V394" stroke="#7DD3FC" stroke-width="16" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="paint0_linear" x1="84" y1="78" x2="442" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#165DFF"/>
+      <stop offset="0.52" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+</svg>
