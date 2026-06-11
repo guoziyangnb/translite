@@ -155,6 +155,7 @@
             <div v-if="updateStage === 'available' && availableVersion" class="update-info">
               <strong>已发现新版本 {{ availableVersion }}</strong>
               <p v-if="appInfo.version">当前版本 {{ appInfo.version }}，点击「现在更新」即可下载并自动重启。</p>
+              <p v-if="currentMirror" class="mirror-line">将通过镜像源 <code>{{ currentMirror }}</code> 加速下载</p>
             </div>
             <div v-if="updateStage === 'downloading'" class="update-progress">
               <n-progress
@@ -235,6 +236,7 @@ const updateLoading = ref(false);
 const updateMessage = ref('');
 const updateStage = ref('idle');
 const availableVersion = ref('');
+const currentMirror = ref('');
 const downloadPercent = ref(0);
 const downloadSpeed = ref(0);
 const downloadStarting = ref(false);
@@ -406,7 +408,8 @@ const downloadStatusLabel = computed(() => {
   const percent = downloadPercent.value;
   const speed = downloadSpeed.value;
   const speedText = speed > 0 ? `（${formatSpeed(speed)}）` : '';
-  return `正在下载新版本 ${percent}%${speedText}`;
+  const mirrorText = currentMirror.value ? `通过 ${currentMirror.value} ` : '';
+  return `${mirrorText}下载中 ${percent}%${speedText}`;
 });
 
 function formatSpeed(bytesPerSecond) {
@@ -434,10 +437,12 @@ function handleUpdateEvent(message) {
   const { event, payload = {} } = message;
   switch (event) {
     case 'checking':
+      if (payload.mirror) currentMirror.value = payload.mirror;
       updateMessage.value = '正在检查更新…';
       break;
     case 'available':
       availableVersion.value = payload.version || '';
+      currentMirror.value = payload.mirror || currentMirror.value;
       updateStage.value = 'available';
       updateMessage.value = '';
       break;
@@ -451,6 +456,13 @@ function handleUpdateEvent(message) {
       downloadStarting.value = false;
       downloadPercent.value = payload.percent ?? 0;
       downloadSpeed.value = payload.bytesPerSecond ?? 0;
+      if (payload.mirror) currentMirror.value = payload.mirror;
+      break;
+    case 'mirror-switch':
+      if (payload.to) {
+        currentMirror.value = payload.to;
+        updateMessage.value = `镜像 ${payload.from || ''} 失败，尝试切换到 ${payload.to}…`;
+      }
       break;
     case 'downloaded':
       availableVersion.value = payload.version || availableVersion.value;
@@ -483,6 +495,7 @@ async function onCheckUpdate() {
       updateMessage.value = result.message || '开发环境不会进行更新检测。';
       return;
     }
+    currentMirror.value = result?.mirror || currentMirror.value;
     if (result?.hasUpdate) {
       availableVersion.value = result.latestVersion || '';
       updateStage.value = 'available';
@@ -509,7 +522,8 @@ async function onStartUpdateDownload() {
   downloadPercent.value = 0;
   downloadSpeed.value = 0;
   try {
-    await window.translator.downloadUpdate();
+    const result = await window.translator.downloadUpdate();
+    if (result?.mirror) currentMirror.value = result.mirror;
     updateStage.value = 'ready';
     downloadPercent.value = 100;
     // 下载完成后自动重启安装，符合"点击现在更新即可完成升级"的体验。
@@ -757,6 +771,19 @@ onUnmounted(() => {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.update-info .mirror-line {
+  margin-top: 4px;
+}
+
+.update-info code {
+  padding: 1px 6px;
+  background: rgba(31, 122, 92, 0.12);
+  border-radius: 4px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  font-size: 12px;
+  color: var(--text);
 }
 
 .update-progress {

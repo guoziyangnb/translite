@@ -5,6 +5,18 @@ const fs = require('fs/promises');
 const path = require('path');
 const vm = require('vm');
 
+// GitHub Release 的 latest 直链——所有镜像都把这个 URL 当后缀拼接。
+const GITHUB_RELEASE_BASE = 'https://github.com/guoziyangnb/translite/releases/latest/download';
+
+// 国内访问 GitHub 速度普遍偏慢，这里按优先级排列了一组镜像源前缀。
+// 第一个能正常返回 latest.yml 的源就用，失败时自动切到下一个；最后一项为空表示直连 GitHub 兜底。
+const UPDATE_MIRRORS = [
+  { name: 'gh-proxy', prefix: 'https://gh-proxy.com/' },
+  { name: 'moeyy', prefix: 'https://github.moeyy.xyz/' },
+  { name: 'ghproxy.net', prefix: 'https://ghproxy.net/' },
+  { name: 'github', prefix: '' }
+];
+
 const isMac = process.platform === 'darwin';
 const isWin = process.platform === 'win32';
 const defaultShortcut = isMac ? 'Command+Shift+T' : 'Control+Shift+T';
@@ -29,8 +41,7 @@ let registeredShortcut = '';
 const pendingRequests = new Map();
 
 let updaterInitialized = false;
-let updaterCheckState = null;
-let updaterDownloadState = null;
+let currentMirrorIndex = 0;
 let cachedUpdateInfo = null;
 let updateDownloadCompleted = false;
 
@@ -627,20 +638,19 @@ function broadcastUpdateEvent(event, payload = {}) {
   mainWindow.webContents.send('translator:update-event', { event, payload });
 }
 
-function settlePendingCheck(outcome) {
-  if (!updaterCheckState) return;
-  const { resolve, reject } = updaterCheckState;
-  updaterCheckState = null;
-  if (outcome.error) reject(outcome.error);
-  else resolve(outcome.value);
+function buildFeedUrl(mirrorIndex) {
+  const entry = UPDATE_MIRRORS[mirrorIndex] || UPDATE_MIRRORS[UPDATE_MIRRORS.length - 1];
+  return entry.prefix ? `${entry.prefix}${GITHUB_RELEASE_BASE}` : GITHUB_RELEASE_BASE;
 }
 
-function settlePendingDownload(outcome) {
-  if (!updaterDownloadState) return;
-  const { resolve, reject } = updaterDownloadState;
-  updaterDownloadState = null;
-  if (outcome.error) reject(outcome.error);
-  else resolve(outcome.value);
+function applyFeedUrl(mirrorIndex) {
+  currentMirrorIndex = mirrorIndex;
+  autoUpdater.setFeedURL({
+    provider: 'generic',
+    url: buildFeedUrl(mirrorIndex),
+    channel: 'latest',
+    useMultipleRangeRequest: false
+  });
 }
 
 function initAutoUpdater() {
@@ -655,56 +665,13 @@ function initAutoUpdater() {
     debug: () => {}
   };
 
-  autoUpdater.on('checking-for-update', () => broadcastUpdateEvent('checking'));
-
-  autoUpdater.on('update-available', (info) => {
-    cachedUpdateInfo = info;
-    updateDownloadCompleted = false;
-    broadcastUpdateEvent('available', {
-      version: info?.version || '',
-      releaseDate: info?.releaseDate || '',
-      releaseNotes: info?.releaseNotes || ''
-    });
-    settlePendingCheck({
-      value: {
-        currentVersion: app.getVersion(),
-        latestVersion: info?.version || '',
-        hasUpdate: true,
-        releaseNotes: info?.releaseNotes || '',
-        releaseDate: info?.releaseDate || '',
-        checkedAt: new Date().toISOString(),
-        message: `发现新版本 ${info?.version || ''}`
-      }
-    });
-  });
-
-  autoUpdater.on('update-not-available', (info) => {
-    cachedUpdateInfo = info || null;
-    broadcastUpdateEvent('not-available', { version: info?.version || '' });
-    settlePendingCheck({
-      value: {
-        currentVersion: app.getVersion(),
-        latestVersion: info?.version || app.getVersion(),
-        hasUpdate: false,
-        checkedAt: new Date().toISOString(),
-        message: `当前已是最新版本（${app.getVersion()}）`
-      }
-    });
-  });
-
-  autoUpdater.on('error', (error) => {
-    const message = error?.message || String(error || '更新检查失败');
-    broadcastUpdateEvent('error', { message });
-    settlePendingCheck({ error: new Error(message) });
-    settlePendingDownload({ error: new Error(message) });
-  });
-
   autoUpdater.on('download-progress', (progress) => {
     broadcastUpdateEvent('download-progress', {
       percent: Math.max(0, Math.min(100, Math.round(progress?.percent || 0))),
       transferred: progress?.transferred || 0,
       total: progress?.total || 0,
-      bytesPerSecond: progress?.bytesPerSecond || 0
+      bytesPerSecond: progress?.bytesPerSecond || 0,
+      mirror: UPDATE_MIRRORS[currentMirrorIndex]?.name || ''
     });
   });
 
@@ -713,18 +680,24 @@ function initAutoUpdater() {
     updateDownloadCompleted = true;
     broadcastUpdateEvent('downloaded', {
       version: info?.version || '',
-      releaseDate: info?.releaseDate || ''
-    });
-    settlePendingDownload({
-      value: {
-        version: info?.version || '',
-        releaseDate: info?.releaseDate || ''
-      }
+      releaseDate: info?.releaseDate || '',
+      mirror: UPDATE_MIRRORS[currentMirrorIndex]?.name || ''
     });
   });
+
+  applyFeedUrl(0);
 }
 
-async function performUpdateCheck({ silent = false } = {}) {
+async function runSingleCheck(mirrorIndex) {
+  applyFeedUrl(mirrorIndex);
+  broadcastUpdateEvent('checking', { mirror: UPDATE_MIRRORS[mirrorIndex]?.name || '' });
+  const result = await autoUpdater.checkForUpdates();
+  const latestVersion = result?.updateInfo?.version || '';
+  if (!latestVersion) throw new Error('未能解析远端版本信息。');
+  return result.updateInfo;
+}
+
+async function performUpdateCheck() {
   const currentVersion = app.getVersion();
   if (!app.isPackaged) {
     return {
@@ -737,67 +710,88 @@ async function performUpdateCheck({ silent = false } = {}) {
     };
   }
   initAutoUpdater();
-  if (updaterCheckState) {
-    // 复用进行中的检查请求，避免并发产生第二次网络请求。
-    return updaterCheckState.promise;
-  }
 
-  let resolve;
-  let reject;
-  const promise = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  updaterCheckState = { resolve, reject, promise, silent };
-
-  try {
-    const result = await autoUpdater.checkForUpdates();
-    const latestVersion = result?.updateInfo?.version || '';
-    // 当前 electron-updater 在某些场景下不会触发事件，这里兜底比较版本号。
-    if (updaterCheckState) {
-      if (latestVersion && isNewerVersion(latestVersion, currentVersion)) {
-        autoUpdater.emit('update-available', result.updateInfo);
-      } else if (latestVersion) {
-        autoUpdater.emit('update-not-available', result.updateInfo);
-      }
+  let lastError = null;
+  for (let i = 0; i < UPDATE_MIRRORS.length; i++) {
+    try {
+      const updateInfo = await runSingleCheck(i);
+      const latestVersion = updateInfo.version;
+      const hasUpdate = isNewerVersion(latestVersion, currentVersion);
+      const mirrorName = UPDATE_MIRRORS[i]?.name || '';
+      cachedUpdateInfo = hasUpdate ? updateInfo : null;
+      updateDownloadCompleted = false;
+      const eventPayload = {
+        version: latestVersion,
+        releaseDate: updateInfo.releaseDate || '',
+        releaseNotes: updateInfo.releaseNotes || '',
+        mirror: mirrorName
+      };
+      broadcastUpdateEvent(hasUpdate ? 'available' : 'not-available', eventPayload);
+      return {
+        currentVersion,
+        latestVersion,
+        hasUpdate,
+        releaseDate: updateInfo.releaseDate || '',
+        releaseNotes: updateInfo.releaseNotes || '',
+        mirror: mirrorName,
+        checkedAt: new Date().toISOString(),
+        message: hasUpdate
+          ? `发现新版本 ${latestVersion}`
+          : `当前已是最新版本（${currentVersion}）`
+      };
+    } catch (error) {
+      lastError = error;
+      console.warn(`[updater] 镜像 ${UPDATE_MIRRORS[i]?.name} 检查失败：`, error?.message || error);
+      broadcastUpdateEvent('mirror-switch', {
+        from: UPDATE_MIRRORS[i]?.name || '',
+        to: UPDATE_MIRRORS[i + 1]?.name || ''
+      });
     }
-  } catch (error) {
-    settlePendingCheck({ error: error instanceof Error ? error : new Error(String(error)) });
   }
 
-  return promise;
+  const message = lastError?.message || '所有更新源均不可用，请检查网络。';
+  broadcastUpdateEvent('error', { message });
+  throw new Error(message);
 }
 
-function startUpdateDownload() {
+async function startUpdateDownload() {
   if (!app.isPackaged) {
     throw new Error('开发环境无法下载更新，请使用打包后的版本。');
   }
   initAutoUpdater();
   if (updateDownloadCompleted) {
-    return Promise.resolve({
+    return {
       version: cachedUpdateInfo?.version || '',
-      releaseDate: cachedUpdateInfo?.releaseDate || ''
-    });
-  }
-  if (updaterDownloadState) {
-    return updaterDownloadState.promise;
+      releaseDate: cachedUpdateInfo?.releaseDate || '',
+      mirror: UPDATE_MIRRORS[currentMirrorIndex]?.name || ''
+    };
   }
 
-  let resolve;
-  let reject;
-  const promise = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  updaterDownloadState = { resolve, reject, promise };
+  let lastError = null;
+  for (let i = currentMirrorIndex; i < UPDATE_MIRRORS.length; i++) {
+    try {
+      applyFeedUrl(i);
+      // 重新走一次 check，确保 autoUpdater 内部状态与当前镜像一致。
+      await autoUpdater.checkForUpdates();
+      await autoUpdater.downloadUpdate();
+      return {
+        version: cachedUpdateInfo?.version || '',
+        releaseDate: cachedUpdateInfo?.releaseDate || '',
+        mirror: UPDATE_MIRRORS[i]?.name || ''
+      };
+    } catch (error) {
+      lastError = error;
+      console.warn(`[updater] 镜像 ${UPDATE_MIRRORS[i]?.name} 下载失败：`, error?.message || error);
+      broadcastUpdateEvent('mirror-switch', {
+        from: UPDATE_MIRRORS[i]?.name || '',
+        to: UPDATE_MIRRORS[i + 1]?.name || ''
+      });
+    }
+  }
 
-  autoUpdater.downloadUpdate().catch((error) => {
-    settlePendingDownload({
-      error: error instanceof Error ? error : new Error(String(error || '下载更新失败'))
-    });
-  });
-
-  return promise;
+  const message = lastError?.message || '所有更新源均下载失败，请稍后重试。';
+  broadcastUpdateEvent('error', { message });
+  throw new Error(message);
 }
 
 function quitAndInstallUpdate() {
@@ -824,7 +818,7 @@ function scheduleStartupUpdateCheck() {
   if (!app.isPackaged) return;
   // 延迟一会儿，避免和窗口加载、模型预热抢资源。
   setTimeout(() => {
-    performUpdateCheck({ silent: true }).catch((error) => {
+    performUpdateCheck().catch((error) => {
       console.warn('[updater] startup check failed:', error?.message || error);
     });
   }, 4000);
@@ -873,7 +867,7 @@ app.whenReady().then(async () => {
     shell.showItemInFolder(settingsPath);
     return true;
   });
-  ipcMain.handle('translator:check-update', () => performUpdateCheck({ silent: false }));
+  ipcMain.handle('translator:check-update', () => performUpdateCheck());
   ipcMain.handle('translator:download-update', () => startUpdateDownload());
   ipcMain.handle('translator:install-update', () => {
     quitAndInstallUpdate();

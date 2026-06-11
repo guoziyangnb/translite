@@ -695,9 +695,14 @@ function handleUpdateEvent(payload) {
   const version = payload.payload?.version || '';
   if (!version || notifiedUpdateVersion === version) return;
   notifiedUpdateVersion = version;
+  const mirrorName = payload.payload?.mirror || '';
+  const contentLines = [`TransLite ${version} 已发布，可在「应用设置 → 关于」中下载并自动安装。`];
+  if (mirrorName && mirrorName !== 'github') {
+    contentLines.push(`国内将通过镜像源 ${mirrorName} 加速下载。`);
+  }
   notification.info({
     title: '发现新版本',
-    content: `TransLite ${version} 已发布，可在「应用设置 → 关于」中下载并自动安装。`,
+    content: contentLines.join(''),
     meta: '点击「现在更新」即可一键升级',
     action: () =>
       h(
