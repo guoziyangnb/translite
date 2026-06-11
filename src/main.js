@@ -5,10 +5,19 @@ const path = require('path');
 const vm = require('vm');
 
 const isMac = process.platform === 'darwin';
+const isWin = process.platform === 'win32';
 const defaultShortcut = isMac ? 'Command+Shift+T' : 'Control+Shift+T';
 const defaultModelId = 'onnx-community/HY-MT1.5-1.8B-ONNX';
 const defaultUsageTemplate = 'officialStatus';
-const appIconPath = path.join(__dirname, 'renderer', 'assets', 'translite-icon.png');
+const assetsDir = path.join(__dirname, 'renderer', 'assets');
+const preferredIcon = isWin
+  ? path.join(assetsDir, 'translite-icon.ico')
+  : isMac
+    ? path.join(assetsDir, 'translite-icon.icns')
+    : path.join(assetsDir, 'translite-icon.png');
+const appIconPath = require('node:fs').existsSync(preferredIcon)
+  ? preferredIcon
+  : path.join(assetsDir, 'translite-icon.png');
 
 let mainWindow;
 let settingsPath;

@@ -9,6 +9,7 @@
     "start": "electron .",
     "dev": "vite --host 127.0.0.1",
     "lint": "node --check src/main.js && node --check src/preload.js && node --check src/localTranslator.node.js",
+    "build:icons": "node scripts/build-icons.js",
     "pack:win": "npm run build && electron-builder --win --x64",
     "pack:mac": "npm run build && electron-builder --mac --x64 --arm64",
     "release:win": "npm run build && electron-builder --win --x64 --publish always",
@@ -28,6 +29,7 @@
     "@vitejs/plugin-vue": "^6.0.7",
     "electron": "^31.7.7",
     "electron-builder": "^25.1.8",
+    "png2icons": "^2.0.1",
     "vite": "^8.0.16"
   },
   "dependencies": {
@@ -75,10 +77,12 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
-      "icon": "src/renderer/assets/translite-icon.png",
+      "icon": "build/icon.ico",
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
     },
     "nsis": {
@@ -94,10 +98,13 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
-      "icon": "src/renderer/assets/translite-icon.png",
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "identity": null
