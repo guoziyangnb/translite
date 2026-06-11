@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('translator', {
   openExternal: (url) => ipcRenderer.invoke('translator:open-external', url),
   revealConfig: () => ipcRenderer.invoke('translator:reveal-config'),
   checkUpdate: () => ipcRenderer.invoke('translator:check-update'),
+  downloadUpdate: () => ipcRenderer.invoke('translator:download-update'),
+  installUpdate: () => ipcRenderer.invoke('translator:install-update'),
   getAppInfo: () => ipcRenderer.invoke('translator:get-app-info'),
   hide: () => ipcRenderer.invoke('translator:hide'),
   onFocusInput: (callback) => {
@@ -27,5 +29,10 @@ contextBridge.exposeInMainWorld('translator', {
     const listener = (_event, message) => callback(message);
     ipcRenderer.on('translator:local-progress', listener);
     return () => ipcRenderer.removeListener('translator:local-progress', listener);
+  },
+  onUpdateEvent: (callback) => {
+    const listener = (_event, message) => callback(message);
+    ipcRenderer.on('translator:update-event', listener);
+    return () => ipcRenderer.removeListener('translator:update-event', listener);
   }
 });

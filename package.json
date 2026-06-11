@@ -1,6 +1,6 @@
 {
   "name": "translite",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A lightweight desktop translator with local models, online LLM providers, and a global quick-open shortcut.",
   "main": "src/main.js",
   "scripts": {
