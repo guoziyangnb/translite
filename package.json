@@ -92,7 +92,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "TransLite",
-      "uninstallDisplayName": "TransLite ${version}"
+      "uninstallDisplayName": "TransLite ${version}",
+      "include": "build/installer.nsh"
     },
     "mac": {
       "target": [
