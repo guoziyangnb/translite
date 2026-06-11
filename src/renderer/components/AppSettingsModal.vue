@@ -126,7 +126,49 @@
                   <p>版本 {{ appInfo.version || '—' }}</p>
                 </div>
               </div>
-              <n-button type="primary" :loading="updateLoading" @click="onCheckUpdate">检查更新</n-button>
+              <div class="about-version__actions">
+                <n-button
+                  v-if="updateStage !== 'available' && updateStage !== 'downloading' && updateStage !== 'ready'"
+                  type="primary"
+                  :loading="updateLoading"
+                  @click="onCheckUpdate"
+                >检查更新</n-button>
+                <n-button
+                  v-if="updateStage === 'available'"
+                  type="primary"
+                  :loading="downloadStarting"
+                  @click="onStartUpdateDownload"
+                >现在更新</n-button>
+                <n-button
+                  v-if="updateStage === 'ready'"
+                  type="primary"
+                  :loading="installing"
+                  @click="onInstallUpdate"
+                >立即重启安装</n-button>
+                <n-button
+                  v-if="updateStage === 'ready' && !installing"
+                  quaternary
+                  @click="resetUpdateState"
+                >稍后再说</n-button>
+              </div>
+            </div>
+            <div v-if="updateStage === 'available' && availableVersion" class="update-info">
+              <strong>已发现新版本 {{ availableVersion }}</strong>
+              <p v-if="appInfo.version">当前版本 {{ appInfo.version }}，点击「现在更新」即可下载并自动重启。</p>
+            </div>
+            <div v-if="updateStage === 'downloading'" class="update-progress">
+              <n-progress
+                type="line"
+                :percentage="downloadPercent"
+                :show-indicator="true"
+                indicator-placement="inside"
+                :height="14"
+              />
+              <p class="hint">{{ downloadStatusLabel }}</p>
+            </div>
+            <div v-if="updateStage === 'ready'" class="update-info">
+              <strong>新版本已下载完成</strong>
+              <p>点击「立即重启安装」即可结束当前窗口并自动安装。</p>
             </div>
             <p v-if="updateMessage" class="hint">{{ updateMessage }}</p>
           </div>
@@ -169,7 +211,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { BookOpen, ExternalLink, Github, Info, Lock, Settings as SettingsIcon } from 'lucide-vue-next';
 import iconUrl from '../assets/translite-icon.svg';
 
@@ -191,8 +233,16 @@ const activeTab = ref('general');
 const recording = ref(false);
 const updateLoading = ref(false);
 const updateMessage = ref('');
+const updateStage = ref('idle');
+const availableVersion = ref('');
+const downloadPercent = ref(0);
+const downloadSpeed = ref(0);
+const downloadStarting = ref(false);
+const installing = ref(false);
 const configPath = ref('');
 const appInfo = reactive({ name: '', version: '', platform: '', electron: '', node: '' });
+
+let removeUpdateListener = null;
 
 const defaultShortcut = navigator.platform.toLowerCase().includes('mac')
   ? 'Command+Shift+T'
@@ -351,22 +401,136 @@ async function openUrl(url) {
   await window.translator?.openExternal?.(url);
 }
 
+const downloadStatusLabel = computed(() => {
+  if (updateStage.value !== 'downloading') return '';
+  const percent = downloadPercent.value;
+  const speed = downloadSpeed.value;
+  const speedText = speed > 0 ? `（${formatSpeed(speed)}）` : '';
+  return `正在下载新版本 ${percent}%${speedText}`;
+});
+
+function formatSpeed(bytesPerSecond) {
+  if (!bytesPerSecond) return '';
+  if (bytesPerSecond > 1024 * 1024) {
+    return `${(bytesPerSecond / 1024 / 1024).toFixed(2)} MB/s`;
+  }
+  if (bytesPerSecond > 1024) {
+    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+  }
+  return `${Math.round(bytesPerSecond)} B/s`;
+}
+
+function resetUpdateState() {
+  updateStage.value = 'idle';
+  availableVersion.value = '';
+  downloadPercent.value = 0;
+  downloadSpeed.value = 0;
+  downloadStarting.value = false;
+  updateMessage.value = '';
+}
+
+function handleUpdateEvent(message) {
+  if (!message || typeof message !== 'object') return;
+  const { event, payload = {} } = message;
+  switch (event) {
+    case 'checking':
+      updateMessage.value = '正在检查更新…';
+      break;
+    case 'available':
+      availableVersion.value = payload.version || '';
+      updateStage.value = 'available';
+      updateMessage.value = '';
+      break;
+    case 'not-available':
+      if (updateStage.value === 'idle') {
+        updateMessage.value = `当前已是最新版本（${payload.version || appInfo.version}）`;
+      }
+      break;
+    case 'download-progress':
+      updateStage.value = 'downloading';
+      downloadStarting.value = false;
+      downloadPercent.value = payload.percent ?? 0;
+      downloadSpeed.value = payload.bytesPerSecond ?? 0;
+      break;
+    case 'downloaded':
+      availableVersion.value = payload.version || availableVersion.value;
+      downloadPercent.value = 100;
+      updateStage.value = 'ready';
+      downloadStarting.value = false;
+      updateMessage.value = '';
+      break;
+    case 'error':
+      downloadStarting.value = false;
+      installing.value = false;
+      updateMessage.value = payload.message || '更新过程中发生错误';
+      if (updateStage.value === 'downloading') updateStage.value = 'available';
+      break;
+    default:
+      break;
+  }
+}
+
 async function onCheckUpdate() {
   if (!window.translator?.checkUpdate) {
     updateMessage.value = '当前环境不支持检查更新';
     return;
   }
   updateLoading.value = true;
-  updateMessage.value = '';
+  updateMessage.value = '正在检查更新…';
   try {
     const result = await window.translator.checkUpdate();
-    updateMessage.value = result.hasUpdate
-      ? `发现新版本 ${result.latestVersion}，当前版本 ${result.currentVersion}`
-      : result.message || `当前已是最新版本（${result.currentVersion}）`;
+    if (result?.devMode) {
+      updateMessage.value = result.message || '开发环境不会进行更新检测。';
+      return;
+    }
+    if (result?.hasUpdate) {
+      availableVersion.value = result.latestVersion || '';
+      updateStage.value = 'available';
+      updateMessage.value = '';
+    } else {
+      updateStage.value = 'idle';
+      updateMessage.value = result?.message || `当前已是最新版本（${result?.currentVersion || appInfo.version}）`;
+    }
   } catch (error) {
     updateMessage.value = error?.message || '检查更新失败';
   } finally {
     updateLoading.value = false;
+  }
+}
+
+async function onStartUpdateDownload() {
+  if (!window.translator?.downloadUpdate) {
+    updateMessage.value = '当前环境不支持自动下载更新';
+    return;
+  }
+  downloadStarting.value = true;
+  updateMessage.value = '';
+  updateStage.value = 'downloading';
+  downloadPercent.value = 0;
+  downloadSpeed.value = 0;
+  try {
+    await window.translator.downloadUpdate();
+    updateStage.value = 'ready';
+    downloadPercent.value = 100;
+    // 下载完成后自动重启安装，符合"点击现在更新即可完成升级"的体验。
+    await onInstallUpdate();
+  } catch (error) {
+    updateMessage.value = error?.message || '更新下载失败';
+    updateStage.value = 'available';
+  } finally {
+    downloadStarting.value = false;
+  }
+}
+
+async function onInstallUpdate() {
+  if (!window.translator?.installUpdate) return;
+  installing.value = true;
+  updateMessage.value = '正在退出并启动安装程序…';
+  try {
+    await window.translator.installUpdate();
+  } catch (error) {
+    installing.value = false;
+    updateMessage.value = error?.message || '安装更新失败';
   }
 }
 
@@ -399,6 +563,17 @@ watch(
   },
   { deep: true }
 );
+
+onMounted(() => {
+  if (window.translator?.onUpdateEvent) {
+    removeUpdateListener = window.translator.onUpdateEvent(handleUpdateEvent);
+  }
+});
+
+onUnmounted(() => {
+  removeUpdateListener?.();
+  removeUpdateListener = null;
+});
 </script>
 
 <style scoped>
@@ -556,6 +731,37 @@ watch(
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+.about-version__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-info {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: #f6faf7;
+}
+
+.update-info strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.update-info p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.update-progress {
+  display: grid;
+  gap: 6px;
 }
 
 .about-icon {

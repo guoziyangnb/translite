@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, shell } = require('electron');
 const { Worker } = require('worker_threads');
+const { autoUpdater } = require('electron-updater');
 const fs = require('fs/promises');
 const path = require('path');
 const vm = require('vm');
@@ -26,6 +27,12 @@ let localWorker;
 let nextRequestId = 1;
 let registeredShortcut = '';
 const pendingRequests = new Map();
+
+let updaterInitialized = false;
+let updaterCheckState = null;
+let updaterDownloadState = null;
+let cachedUpdateInfo = null;
+let updateDownloadCompleted = false;
 
 function getDefaultPreferences() {
   return {
@@ -600,6 +607,229 @@ function applyShortcut(preferences) {
   return { shortcut: next, registered: false };
 }
 
+function isNewerVersion(latest, current) {
+  if (!latest || !current) return false;
+  const parse = (value) => String(value).split('-')[0].split('.').map((part) => parseInt(part, 10) || 0);
+  const a = parse(latest);
+  const b = parse(current);
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const x = a[i] || 0;
+    const y = b[i] || 0;
+    if (x > y) return true;
+    if (x < y) return false;
+  }
+  return false;
+}
+
+function broadcastUpdateEvent(event, payload = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('translator:update-event', { event, payload });
+}
+
+function settlePendingCheck(outcome) {
+  if (!updaterCheckState) return;
+  const { resolve, reject } = updaterCheckState;
+  updaterCheckState = null;
+  if (outcome.error) reject(outcome.error);
+  else resolve(outcome.value);
+}
+
+function settlePendingDownload(outcome) {
+  if (!updaterDownloadState) return;
+  const { resolve, reject } = updaterDownloadState;
+  updaterDownloadState = null;
+  if (outcome.error) reject(outcome.error);
+  else resolve(outcome.value);
+}
+
+function initAutoUpdater() {
+  if (updaterInitialized) return;
+  updaterInitialized = true;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = {
+    info: (...args) => console.log('[updater]', ...args),
+    warn: (...args) => console.warn('[updater]', ...args),
+    error: (...args) => console.error('[updater]', ...args),
+    debug: () => {}
+  };
+
+  autoUpdater.on('checking-for-update', () => broadcastUpdateEvent('checking'));
+
+  autoUpdater.on('update-available', (info) => {
+    cachedUpdateInfo = info;
+    updateDownloadCompleted = false;
+    broadcastUpdateEvent('available', {
+      version: info?.version || '',
+      releaseDate: info?.releaseDate || '',
+      releaseNotes: info?.releaseNotes || ''
+    });
+    settlePendingCheck({
+      value: {
+        currentVersion: app.getVersion(),
+        latestVersion: info?.version || '',
+        hasUpdate: true,
+        releaseNotes: info?.releaseNotes || '',
+        releaseDate: info?.releaseDate || '',
+        checkedAt: new Date().toISOString(),
+        message: `发现新版本 ${info?.version || ''}`
+      }
+    });
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    cachedUpdateInfo = info || null;
+    broadcastUpdateEvent('not-available', { version: info?.version || '' });
+    settlePendingCheck({
+      value: {
+        currentVersion: app.getVersion(),
+        latestVersion: info?.version || app.getVersion(),
+        hasUpdate: false,
+        checkedAt: new Date().toISOString(),
+        message: `当前已是最新版本（${app.getVersion()}）`
+      }
+    });
+  });
+
+  autoUpdater.on('error', (error) => {
+    const message = error?.message || String(error || '更新检查失败');
+    broadcastUpdateEvent('error', { message });
+    settlePendingCheck({ error: new Error(message) });
+    settlePendingDownload({ error: new Error(message) });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    broadcastUpdateEvent('download-progress', {
+      percent: Math.max(0, Math.min(100, Math.round(progress?.percent || 0))),
+      transferred: progress?.transferred || 0,
+      total: progress?.total || 0,
+      bytesPerSecond: progress?.bytesPerSecond || 0
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    cachedUpdateInfo = info;
+    updateDownloadCompleted = true;
+    broadcastUpdateEvent('downloaded', {
+      version: info?.version || '',
+      releaseDate: info?.releaseDate || ''
+    });
+    settlePendingDownload({
+      value: {
+        version: info?.version || '',
+        releaseDate: info?.releaseDate || ''
+      }
+    });
+  });
+}
+
+async function performUpdateCheck({ silent = false } = {}) {
+  const currentVersion = app.getVersion();
+  if (!app.isPackaged) {
+    return {
+      currentVersion,
+      latestVersion: currentVersion,
+      hasUpdate: false,
+      checkedAt: new Date().toISOString(),
+      message: '开发环境不会进行更新检测，请使用打包后的版本。',
+      devMode: true
+    };
+  }
+  initAutoUpdater();
+  if (updaterCheckState) {
+    // 复用进行中的检查请求，避免并发产生第二次网络请求。
+    return updaterCheckState.promise;
+  }
+
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  updaterCheckState = { resolve, reject, promise, silent };
+
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    const latestVersion = result?.updateInfo?.version || '';
+    // 当前 electron-updater 在某些场景下不会触发事件，这里兜底比较版本号。
+    if (updaterCheckState) {
+      if (latestVersion && isNewerVersion(latestVersion, currentVersion)) {
+        autoUpdater.emit('update-available', result.updateInfo);
+      } else if (latestVersion) {
+        autoUpdater.emit('update-not-available', result.updateInfo);
+      }
+    }
+  } catch (error) {
+    settlePendingCheck({ error: error instanceof Error ? error : new Error(String(error)) });
+  }
+
+  return promise;
+}
+
+function startUpdateDownload() {
+  if (!app.isPackaged) {
+    throw new Error('开发环境无法下载更新，请使用打包后的版本。');
+  }
+  initAutoUpdater();
+  if (updateDownloadCompleted) {
+    return Promise.resolve({
+      version: cachedUpdateInfo?.version || '',
+      releaseDate: cachedUpdateInfo?.releaseDate || ''
+    });
+  }
+  if (updaterDownloadState) {
+    return updaterDownloadState.promise;
+  }
+
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  updaterDownloadState = { resolve, reject, promise };
+
+  autoUpdater.downloadUpdate().catch((error) => {
+    settlePendingDownload({
+      error: error instanceof Error ? error : new Error(String(error || '下载更新失败'))
+    });
+  });
+
+  return promise;
+}
+
+function quitAndInstallUpdate() {
+  if (!app.isPackaged) {
+    throw new Error('开发环境无法安装更新。');
+  }
+  if (!updateDownloadCompleted) {
+    throw new Error('更新尚未下载完成，请稍候再试。');
+  }
+  // 触发 will-quit 时跳过快捷键卸载之外的逻辑；electron-updater 会在退出后启动安装程序。
+  app.isQuitting = true;
+  setImmediate(() => {
+    try {
+      // 第一参数请求静默安装；NSIS 在 oneClick=false 时仍会显示界面，但应用会自动重启。
+      autoUpdater.quitAndInstall(true, true);
+    } catch (error) {
+      broadcastUpdateEvent('error', { message: error?.message || '安装更新失败' });
+    }
+  });
+}
+
+function scheduleStartupUpdateCheck() {
+  if (!settings?.preferences?.autoCheckUpdate) return;
+  if (!app.isPackaged) return;
+  // 延迟一会儿，避免和窗口加载、模型预热抢资源。
+  setTimeout(() => {
+    performUpdateCheck({ silent: true }).catch((error) => {
+      console.warn('[updater] startup check failed:', error?.message || error);
+    });
+  }, 4000);
+}
+
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   if (isMac) app.dock?.setIcon(appIconPath);
@@ -643,14 +873,11 @@ app.whenReady().then(async () => {
     shell.showItemInFolder(settingsPath);
     return true;
   });
-  ipcMain.handle('translator:check-update', async () => {
-    return {
-      currentVersion: app.getVersion(),
-      latestVersion: app.getVersion(),
-      hasUpdate: false,
-      checkedAt: new Date().toISOString(),
-      message: '当前已是最新版本'
-    };
+  ipcMain.handle('translator:check-update', () => performUpdateCheck({ silent: false }));
+  ipcMain.handle('translator:download-update', () => startUpdateDownload());
+  ipcMain.handle('translator:install-update', () => {
+    quitAndInstallUpdate();
+    return true;
   });
   ipcMain.handle('translator:get-app-info', () => ({
     name: app.getName(),
@@ -702,6 +929,8 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     else showTranslator();
   });
+
+  scheduleStartupUpdateCheck();
 });
 
 app.on('window-all-closed', () => {
