@@ -103,7 +103,7 @@
 </template>
 
 <script setup>
-import { computed, h, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { createDiscreteApi } from 'naive-ui';
 import AppHeader from './components/AppHeader.vue';
 import AppSettingsModal from './components/AppSettingsModal.vue';
@@ -115,7 +115,7 @@ import { findProviderPreset } from './const/providerPresets';
 import { getUsageTemplateScript, resolveUsageTemplateId } from './const/usageTemplates';
 import { formatUsageMessage, hasUsageStatus } from './utils/usageFormatter';
 
-const { message, notification } = createDiscreteApi(['message', 'notification']);
+const { message } = createDiscreteApi(['message']);
 
 const activeView = ref('translate');
 const appSettingsVisible = ref(false);
@@ -190,8 +190,6 @@ const themeOverrides = {
 };
 
 let removeProgressListener;
-let removeUpdateListener;
-let notifiedUpdateVersion = '';
 
 const pageTitle = computed(() => {
   if (activeView.value === 'translate') return '快速翻译';
@@ -689,42 +687,9 @@ function onKeydown(event) {
 }
 
 
-function handleUpdateEvent(payload) {
-  if (!payload || typeof payload !== 'object') return;
-  if (payload.event !== 'available') return;
-  const version = payload.payload?.version || '';
-  if (!version || notifiedUpdateVersion === version) return;
-  notifiedUpdateVersion = version;
-  const mirrorName = payload.payload?.mirror || '';
-  const contentLines = [`TransLite ${version} 已发布，可在「应用设置 → 关于」中下载并自动安装。`];
-  if (mirrorName) contentLines.push(`国内将通过镜像源 ${mirrorName} 加速下载。`);
-  notification.info({
-    title: '发现新版本',
-    content: contentLines.join(''),
-    meta: '点击「现在更新」即可一键升级',
-    action: () =>
-      h(
-        'button',
-        {
-          style:
-            'cursor:pointer;border:0;border-radius:6px;padding:6px 14px;background:#1f7a5c;color:#fff;font-size:13px;',
-          onClick: () => {
-            openAppSettings();
-          }
-        },
-        '查看更新'
-      ),
-    duration: 8000,
-    keepAliveOnHover: true
-  });
-}
-
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
   window.translator.onFocusInput(focusSourceInput);
-  if (window.translator?.onUpdateEvent) {
-    removeUpdateListener = window.translator.onUpdateEvent(handleUpdateEvent);
-  }
   removeProgressListener = window.translator.onLocalProgress((messageData) => {
     if (messageData.type === 'progress') {
       if (!showLocalDownloadProgress.value) return;
@@ -750,6 +715,5 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown);
   removeProgressListener?.();
-  removeUpdateListener?.();
 });
 </script>

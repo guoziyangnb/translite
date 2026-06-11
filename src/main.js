@@ -1,21 +1,8 @@
 const { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, shell } = require('electron');
 const { Worker } = require('worker_threads');
-const { autoUpdater } = require('electron-updater');
 const fs = require('fs/promises');
 const path = require('path');
 const vm = require('vm');
-
-// GitHub Release 的 latest 直链——所有镜像都把这个 URL 当后缀拼接。
-const GITHUB_RELEASE_BASE = 'https://github.com/guoziyangnb/translite/releases/latest/download';
-
-// 国内访问 GitHub 速度普遍偏慢，这里按优先级排列了一组镜像源前缀。
-// 第一个能正常返回 latest.yml 的源就用，失败时自动切到下一个；最后一项为空表示直连 GitHub 兜底。
-const UPDATE_MIRRORS = [
-  { name: 'gh-proxy', prefix: 'https://gh-proxy.com/' },
-  { name: 'moeyy', prefix: 'https://github.moeyy.xyz/' },
-  { name: 'ghproxy.net', prefix: 'https://ghproxy.net/' },
-  { name: 'github', prefix: '' }
-];
 
 const isMac = process.platform === 'darwin';
 const isWin = process.platform === 'win32';
@@ -39,11 +26,6 @@ let localWorker;
 let nextRequestId = 1;
 let registeredShortcut = '';
 const pendingRequests = new Map();
-
-let updaterInitialized = false;
-let currentMirrorIndex = 0;
-let cachedUpdateInfo = null;
-let updateDownloadCompleted = false;
 
 function getDefaultPreferences() {
   return {
@@ -618,207 +600,6 @@ function applyShortcut(preferences) {
   return { shortcut: next, registered: false };
 }
 
-function isNewerVersion(latest, current) {
-  if (!latest || !current) return false;
-  const parse = (value) => String(value).split('-')[0].split('.').map((part) => parseInt(part, 10) || 0);
-  const a = parse(latest);
-  const b = parse(current);
-  const len = Math.max(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    const x = a[i] || 0;
-    const y = b[i] || 0;
-    if (x > y) return true;
-    if (x < y) return false;
-  }
-  return false;
-}
-
-function broadcastUpdateEvent(event, payload = {}) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send('translator:update-event', { event, payload });
-}
-
-function buildFeedUrl(mirrorIndex) {
-  const entry = UPDATE_MIRRORS[mirrorIndex] || UPDATE_MIRRORS[UPDATE_MIRRORS.length - 1];
-  return entry.prefix ? `${entry.prefix}${GITHUB_RELEASE_BASE}` : GITHUB_RELEASE_BASE;
-}
-
-function applyFeedUrl(mirrorIndex) {
-  currentMirrorIndex = mirrorIndex;
-  autoUpdater.setFeedURL({
-    provider: 'generic',
-    url: buildFeedUrl(mirrorIndex),
-    channel: 'latest',
-    useMultipleRangeRequest: false
-  });
-}
-
-function initAutoUpdater() {
-  if (updaterInitialized) return;
-  updaterInitialized = true;
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.logger = {
-    info: (...args) => console.log('[updater]', ...args),
-    warn: (...args) => console.warn('[updater]', ...args),
-    error: (...args) => console.error('[updater]', ...args),
-    debug: () => {}
-  };
-
-  autoUpdater.on('download-progress', (progress) => {
-    broadcastUpdateEvent('download-progress', {
-      percent: Math.max(0, Math.min(100, Math.round(progress?.percent || 0))),
-      transferred: progress?.transferred || 0,
-      total: progress?.total || 0,
-      bytesPerSecond: progress?.bytesPerSecond || 0,
-      mirror: UPDATE_MIRRORS[currentMirrorIndex]?.name || ''
-    });
-  });
-
-  autoUpdater.on('update-downloaded', (info) => {
-    cachedUpdateInfo = info;
-    updateDownloadCompleted = true;
-    broadcastUpdateEvent('downloaded', {
-      version: info?.version || '',
-      releaseDate: info?.releaseDate || '',
-      mirror: UPDATE_MIRRORS[currentMirrorIndex]?.name || ''
-    });
-  });
-
-  applyFeedUrl(0);
-}
-
-async function runSingleCheck(mirrorIndex) {
-  applyFeedUrl(mirrorIndex);
-  broadcastUpdateEvent('checking', { mirror: UPDATE_MIRRORS[mirrorIndex]?.name || '' });
-  const result = await autoUpdater.checkForUpdates();
-  const latestVersion = result?.updateInfo?.version || '';
-  if (!latestVersion) throw new Error('未能解析远端版本信息。');
-  return result.updateInfo;
-}
-
-async function performUpdateCheck() {
-  const currentVersion = app.getVersion();
-  if (!app.isPackaged) {
-    return {
-      currentVersion,
-      latestVersion: currentVersion,
-      hasUpdate: false,
-      checkedAt: new Date().toISOString(),
-      message: '开发环境不会进行更新检测，请使用打包后的版本。',
-      devMode: true
-    };
-  }
-  initAutoUpdater();
-
-  let lastError = null;
-  for (let i = 0; i < UPDATE_MIRRORS.length; i++) {
-    try {
-      const updateInfo = await runSingleCheck(i);
-      const latestVersion = updateInfo.version;
-      const hasUpdate = isNewerVersion(latestVersion, currentVersion);
-      const mirrorName = UPDATE_MIRRORS[i]?.name || '';
-      cachedUpdateInfo = hasUpdate ? updateInfo : null;
-      updateDownloadCompleted = false;
-      const eventPayload = {
-        version: latestVersion,
-        releaseDate: updateInfo.releaseDate || '',
-        releaseNotes: updateInfo.releaseNotes || '',
-        mirror: mirrorName
-      };
-      broadcastUpdateEvent(hasUpdate ? 'available' : 'not-available', eventPayload);
-      return {
-        currentVersion,
-        latestVersion,
-        hasUpdate,
-        releaseDate: updateInfo.releaseDate || '',
-        releaseNotes: updateInfo.releaseNotes || '',
-        mirror: mirrorName,
-        checkedAt: new Date().toISOString(),
-        message: hasUpdate
-          ? `发现新版本 ${latestVersion}`
-          : `当前已是最新版本（${currentVersion}）`
-      };
-    } catch (error) {
-      lastError = error;
-      console.warn(`[updater] 镜像 ${UPDATE_MIRRORS[i]?.name} 检查失败：`, error?.message || error);
-    }
-  }
-
-  const message = lastError?.message || '所有更新源均不可用，请检查网络。';
-  broadcastUpdateEvent('error', { message });
-  throw new Error(message);
-}
-
-async function startUpdateDownload() {
-  if (!app.isPackaged) {
-    throw new Error('开发环境无法下载更新，请使用打包后的版本。');
-  }
-  initAutoUpdater();
-  if (updateDownloadCompleted) {
-    return {
-      version: cachedUpdateInfo?.version || '',
-      releaseDate: cachedUpdateInfo?.releaseDate || ''
-    };
-  }
-
-  let lastError = null;
-  for (let i = currentMirrorIndex; i < UPDATE_MIRRORS.length; i++) {
-    try {
-      applyFeedUrl(i);
-      // 重新走一次 check，确保 autoUpdater 内部状态与当前镜像一致。
-      await autoUpdater.checkForUpdates();
-      await autoUpdater.downloadUpdate();
-      // update-downloaded 事件里已经把 cachedUpdateInfo 更新好了。
-      return {
-        version: cachedUpdateInfo?.version || '',
-        releaseDate: cachedUpdateInfo?.releaseDate || '',
-        mirror: UPDATE_MIRRORS[i]?.name || ''
-      };
-    } catch (error) {
-      lastError = error;
-      console.warn(`[updater] 镜像 ${UPDATE_MIRRORS[i]?.name} 下载失败：`, error?.message || error);
-      broadcastUpdateEvent('mirror-switch', {
-        from: UPDATE_MIRRORS[i]?.name || '',
-        to: UPDATE_MIRRORS[i + 1]?.name || ''
-      });
-    }
-  }
-
-  const message = lastError?.message || '所有更新源均下载失败，请稍后重试。';
-  broadcastUpdateEvent('error', { message });
-  throw new Error(message);
-}
-
-function quitAndInstallUpdate() {
-  if (!app.isPackaged) {
-    throw new Error('开发环境无法安装更新。');
-  }
-  if (!updateDownloadCompleted) {
-    throw new Error('更新尚未下载完成，请稍候再试。');
-  }
-  app.isQuitting = true;
-  setImmediate(() => {
-    try {
-      // 第一参数请求静默安装；NSIS 在 oneClick=false 时仍会短暂弹窗，但会自动重启。
-      autoUpdater.quitAndInstall(true, true);
-    } catch (error) {
-      broadcastUpdateEvent('error', { message: error?.message || '安装更新失败' });
-    }
-  });
-}
-
-function scheduleStartupUpdateCheck() {
-  if (!settings?.preferences?.autoCheckUpdate) return;
-  if (!app.isPackaged) return;
-  // 延迟一会儿，避免和窗口加载、模型预热抢资源。
-  setTimeout(() => {
-    performUpdateCheck().catch((error) => {
-      console.warn('[updater] startup check failed:', error?.message || error);
-    });
-  }, 4000);
-}
-
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   if (isMac) app.dock?.setIcon(appIconPath);
@@ -862,11 +643,14 @@ app.whenReady().then(async () => {
     shell.showItemInFolder(settingsPath);
     return true;
   });
-  ipcMain.handle('translator:check-update', () => performUpdateCheck());
-  ipcMain.handle('translator:download-update', () => startUpdateDownload());
-  ipcMain.handle('translator:install-update', () => {
-    quitAndInstallUpdate();
-    return true;
+  ipcMain.handle('translator:check-update', async () => {
+    return {
+      currentVersion: app.getVersion(),
+      latestVersion: app.getVersion(),
+      hasUpdate: false,
+      checkedAt: new Date().toISOString(),
+      message: '当前已是最新版本'
+    };
   });
   ipcMain.handle('translator:get-app-info', () => ({
     name: app.getName(),
@@ -918,8 +702,6 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     else showTranslator();
   });
-
-  scheduleStartupUpdateCheck();
 });
 
 app.on('window-all-closed', () => {
