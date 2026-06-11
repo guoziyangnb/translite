@@ -1,5 +1,5 @@
 <!--
-组件作用：应用全局设置弹窗。提供通用设置、隐私、关于三个分页。
+组件作用：应用全局设置弹窗。提供通用设置、隐私、关于三个分页，采用左右分栏布局。
 适用场景：在翻译首页点击标题右侧的齿轮图标后弹出。
 -->
 <template>
@@ -9,14 +9,29 @@
     :auto-focus="false"
     preset="card"
     class="app-settings-modal"
-    :style="{ width: '720px', maxWidth: '92vw' }"
-    :title="'应用设置'"
+    :style="{ width: '760px', maxWidth: '94vw' }"
+    title="应用设置"
     :bordered="false"
     @update:show="(value) => $emit('update:show', value)"
   >
-    <div class="settings-layout-wrap">
-      <n-tabs type="line" :value="activeTab" animated @update:value="(value) => (activeTab = value)">
-        <n-tab-pane name="general" tab="通用设置">
+    <div class="settings-shell">
+      <aside class="settings-nav" role="tablist">
+        <button
+          v-for="item in navItems"
+          :key="item.key"
+          :class="['nav-item', { active: activeTab === item.key }]"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === item.key"
+          @click="activeTab = item.key"
+        >
+          <component :is="item.icon" :size="16" />
+          <span>{{ item.label }}</span>
+        </button>
+      </aside>
+
+      <section class="settings-content">
+        <div v-show="activeTab === 'general'" class="settings-scroll">
           <div class="settings-section">
             <header class="settings-section__head">
               <strong>启动</strong>
@@ -52,7 +67,7 @@
           <div class="settings-section">
             <header class="settings-section__head">
               <strong>快捷键</strong>
-              <p>用于快速唤起或收起翻译窗口，按键时录入。</p>
+              <p>用于快速唤起或收起翻译窗口，点击录入按钮后按下组合键。</p>
             </header>
             <div class="shortcut-row">
               <n-input
@@ -82,9 +97,9 @@
               </n-space>
             </n-radio-group>
           </div>
-        </n-tab-pane>
+        </div>
 
-        <n-tab-pane name="privacy" tab="隐私">
+        <div v-show="activeTab === 'privacy'" class="settings-scroll">
           <div class="settings-section">
             <header class="settings-section__head">
               <strong>配置文件位置</strong>
@@ -99,16 +114,19 @@
             </div>
             <p class="hint">仅在本机存储；不会上传任何文本到 TransLite 服务器。</p>
           </div>
-        </n-tab-pane>
+        </div>
 
-        <n-tab-pane name="about" tab="关于">
-          <div class="settings-section about-card">
-            <div class="about-head">
-              <div>
-                <strong>TransLite</strong>
-                <p>当前版本：{{ appInfo.version || '—' }}</p>
+        <div v-show="activeTab === 'about'" class="settings-scroll">
+          <div class="settings-section">
+            <div class="about-version">
+              <div class="about-version__left">
+                <img class="about-icon" :src="iconUrl" alt="TransLite" />
+                <div>
+                  <strong>TransLite</strong>
+                  <p>版本 {{ appInfo.version || '—' }}</p>
+                </div>
               </div>
-              <n-button type="primary" secondary :loading="updateLoading" @click="onCheckUpdate">检查更新</n-button>
+              <n-button type="primary" :loading="updateLoading" @click="onCheckUpdate">检查更新</n-button>
             </div>
             <p v-if="updateMessage" class="hint">{{ updateMessage }}</p>
           </div>
@@ -119,14 +137,23 @@
               <p>点击在默认浏览器中打开。</p>
             </header>
             <div class="link-list">
-              <a v-for="link in links" :key="link.url" class="link-item" @click.prevent="openUrl(link.url)" href="#">
-                <span class="link-title">{{ link.title }}</span>
-                <span class="link-url">{{ link.url }}</span>
-              </a>
+              <div v-for="link in links" :key="link.url" class="link-card">
+                <div class="link-card__info">
+                  <component :is="link.icon" :size="18" />
+                  <div>
+                    <span class="link-title">{{ link.title }}</span>
+                    <p>{{ link.description }}</p>
+                  </div>
+                </div>
+                <n-button secondary size="small" @click="openUrl(link.url)">
+                  <template #icon><ExternalLink :size="14" /></template>
+                  跳转
+                </n-button>
+              </div>
             </div>
           </div>
-        </n-tab-pane>
-      </n-tabs>
+        </div>
+      </section>
     </div>
 
     <template #footer>
@@ -143,6 +170,8 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue';
+import { BookOpen, ExternalLink, Github, Info, Lock, Settings as SettingsIcon } from 'lucide-vue-next';
+import iconUrl from '../assets/translite-icon.svg';
 
 const props = defineProps({
   show: { type: Boolean, required: true },
@@ -151,6 +180,12 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:show', 'save', 'message']);
+
+const navItems = [
+  { key: 'general', label: '通用设置', icon: SettingsIcon },
+  { key: 'privacy', label: '隐私', icon: Lock },
+  { key: 'about', label: '关于', icon: Info }
+];
 
 const activeTab = ref('general');
 const recording = ref(false);
@@ -164,9 +199,18 @@ const defaultShortcut = navigator.platform.toLowerCase().includes('mac')
   : 'Control+Shift+T';
 
 const links = [
-  { title: 'GitHub 仓库', url: 'https://github.com/guoziyangnb/translite' },
-  { title: '使用文档', url: 'https://github.com/guoziyangnb/translite#readme' },
-  { title: '问题反馈', url: 'https://github.com/guoziyangnb/translite/issues' }
+  {
+    title: 'GitHub 仓库',
+    description: '查看源码、提交反馈或贡献代码。',
+    icon: Github,
+    url: 'https://github.com/guoziyangnb/translite'
+  },
+  {
+    title: '使用文档',
+    description: '配置说明、常见问题与使用技巧。',
+    icon: BookOpen,
+    url: 'https://github.com/guoziyangnb/translite#readme'
+  }
 ];
 
 const form = reactive({
@@ -358,20 +402,74 @@ watch(
 </script>
 
 <style scoped>
-.settings-layout-wrap {
-  max-height: 60vh;
+.settings-shell {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  height: 480px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--line);
+  background: #f7f9f7;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.nav-item:hover {
+  background: rgba(31, 122, 92, 0.08);
+  color: var(--text);
+}
+
+.nav-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.settings-content {
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+}
+
+.settings-scroll {
+  height: 100%;
+  padding: 18px 20px;
   overflow: auto;
-  padding-right: 4px;
 }
 
 .settings-section {
   display: grid;
   gap: 12px;
-  padding: 14px 0;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
   border-bottom: 1px solid var(--line);
 }
 
 .settings-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
   border-bottom: 0;
 }
 
@@ -443,20 +541,36 @@ watch(
   word-break: break-all;
 }
 
-.about-head {
+.about-version {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
 }
 
-.about-head strong {
+.about-version__left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.about-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+}
+
+.about-version strong {
   display: block;
   font-size: 16px;
   margin-bottom: 2px;
 }
 
-.about-head p {
+.about-version p {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
@@ -464,35 +578,42 @@ watch(
 
 .link-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
-.link-item {
-  display: grid;
-  gap: 2px;
-  padding: 10px 12px;
+.link-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfb;
-  color: inherit;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
 }
 
-.link-item:hover {
-  background: rgba(31, 122, 92, 0.06);
-  border-color: var(--accent);
+.link-card__info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.link-card__info > svg {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 .link-title {
+  display: block;
   font-weight: 700;
+  margin-bottom: 2px;
 }
 
-.link-url {
+.link-card__info p {
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
-  word-break: break-all;
 }
 
 .footer-row {

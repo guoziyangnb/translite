@@ -18,11 +18,11 @@
       </div>
     </div>
     <div class="top-actions">
-      <n-tag round :bordered="false" class="shortcut-tag">
+      <n-tag v-if="activeView === 'translate'" round :bordered="false" class="shortcut-tag">
         <Keyboard :size="15" />
         {{ shortcutLabel }}
       </n-tag>
-      <n-button v-if="activeView !== 'translate'" secondary @click="$emit('back-to-translate')">
+      <n-button v-else secondary @click="$emit('back-to-translate')">
         <template #icon><ArrowLeft :size="16" /></template>
         返回
       </n-button>
