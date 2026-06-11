@@ -5,7 +5,7 @@ const path = require('path');
 const vm = require('vm');
 
 const isMac = process.platform === 'darwin';
-const shortcut = isMac ? 'Command+Shift+T' : 'Control+Shift+T';
+const defaultShortcut = isMac ? 'Command+Shift+T' : 'Control+Shift+T';
 const defaultModelId = 'onnx-community/HY-MT1.5-1.8B-ONNX';
 const defaultUsageTemplate = 'officialStatus';
 const appIconPath = path.join(__dirname, 'renderer', 'assets', 'translite-icon.png');
@@ -15,7 +15,18 @@ let settingsPath;
 let settings;
 let localWorker;
 let nextRequestId = 1;
+let registeredShortcut = '';
 const pendingRequests = new Map();
+
+function getDefaultPreferences() {
+  return {
+    autoStart: false,
+    silentStartup: false,
+    autoCheckUpdate: true,
+    shortcut: defaultShortcut,
+    language: 'system'
+  };
+}
 
 function getDefaultSettings() {
   return {
@@ -28,7 +39,19 @@ function getDefaultSettings() {
     online: {
       activeId: '',
       endpoints: []
-    }
+    },
+    preferences: getDefaultPreferences()
+  };
+}
+
+function normalizePreferences(input = {}) {
+  const defaults = getDefaultPreferences();
+  return {
+    autoStart: Boolean(input.autoStart ?? defaults.autoStart),
+    silentStartup: Boolean(input.silentStartup ?? defaults.silentStartup),
+    autoCheckUpdate: Boolean(input.autoCheckUpdate ?? defaults.autoCheckUpdate),
+    shortcut: typeof input.shortcut === 'string' && input.shortcut.trim() ? input.shortcut.trim() : defaults.shortcut,
+    language: ['system', 'zh', 'en', 'ja', 'ko'].includes(input.language) ? input.language : defaults.language
   };
 }
 
@@ -185,7 +208,8 @@ function normalizeSettings(nextSettings = {}) {
     online: {
       activeId: nextSettings.online?.activeId || '',
       endpoints: (nextSettings.online?.endpoints || []).map(normalizeEndpoint)
-    }
+    },
+    preferences: normalizePreferences(nextSettings.preferences)
   };
 }
 
@@ -233,7 +257,11 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'renderer', 'index.html'));
   }
 
-  mainWindow.once('ready-to-show', showTranslator);
+  const startHidden = settings?.preferences?.silentStartup && process.argv.includes('--hidden');
+  mainWindow.once('ready-to-show', () => {
+    if (startHidden) return;
+    showTranslator();
+  });
   mainWindow.on('close', (event) => {
     if (!app.isQuitting) {
       event.preventDefault();
@@ -522,19 +550,108 @@ async function selectDirectory(defaultPath) {
   return result.filePaths[0];
 }
 
+function applyAutoStart(preferences) {
+  try {
+    if (process.platform === 'linux') return;
+    app.setLoginItemSettings({
+      openAtLogin: Boolean(preferences.autoStart),
+      openAsHidden: Boolean(preferences.silentStartup),
+      args: preferences.silentStartup ? ['--hidden'] : []
+    });
+  } catch (error) {
+    console.warn('setLoginItemSettings failed:', error?.message || error);
+  }
+}
+
+function applyShortcut(preferences) {
+  const next = preferences.shortcut || defaultShortcut;
+  if (registeredShortcut && registeredShortcut !== next) {
+    try { globalShortcut.unregister(registeredShortcut); } catch {}
+    registeredShortcut = '';
+  }
+  if (registeredShortcut === next) return { shortcut: next, registered: true };
+  try {
+    const ok = globalShortcut.register(next, toggleTranslator);
+    if (ok) {
+      registeredShortcut = next;
+      return { shortcut: next, registered: true };
+    }
+  } catch (error) {
+    console.warn('shortcut register failed:', error?.message || error);
+  }
+  if (next !== defaultShortcut) {
+    try {
+      const ok = globalShortcut.register(defaultShortcut, toggleTranslator);
+      if (ok) {
+        registeredShortcut = defaultShortcut;
+        return { shortcut: defaultShortcut, registered: true, fallback: true };
+      }
+    } catch {}
+  }
+  return { shortcut: next, registered: false };
+}
+
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   if (isMac) app.dock?.setIcon(appIconPath);
   await readSettings();
+  applyAutoStart(settings.preferences);
   createWindow();
 
-  const registered = globalShortcut.register(shortcut, toggleTranslator);
-  if (!registered) console.warn(`Global shortcut registration failed: ${shortcut}`);
+  const result = applyShortcut(settings.preferences);
+  if (!result.registered) console.warn(`Global shortcut registration failed: ${settings.preferences.shortcut}`);
 
   ipcMain.handle('translator:get-settings', () => settings);
-  ipcMain.handle('translator:save-settings', (_event, nextSettings) => writeSettings(nextSettings));
+  ipcMain.handle('translator:save-settings', async (_event, nextSettings) => {
+    const prevPrefs = settings.preferences;
+    const saved = await writeSettings(nextSettings);
+    if (saved.preferences.shortcut !== prevPrefs.shortcut) applyShortcut(saved.preferences);
+    if (saved.preferences.autoStart !== prevPrefs.autoStart
+      || saved.preferences.silentStartup !== prevPrefs.silentStartup) {
+      applyAutoStart(saved.preferences);
+    }
+    return saved;
+  });
+  ipcMain.handle('translator:save-preferences', async (_event, prefs) => {
+    const prevPrefs = settings.preferences;
+    settings.preferences = normalizePreferences({ ...prevPrefs, ...(prefs || {}) });
+    await writeSettings(settings);
+    if (settings.preferences.shortcut !== prevPrefs.shortcut) applyShortcut(settings.preferences);
+    if (settings.preferences.autoStart !== prevPrefs.autoStart
+      || settings.preferences.silentStartup !== prevPrefs.silentStartup) {
+      applyAutoStart(settings.preferences);
+    }
+    return settings.preferences;
+  });
+  ipcMain.handle('translator:get-config-path', () => settingsPath || '');
+  ipcMain.handle('translator:open-external', (_event, url) => {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false;
+    shell.openExternal(url);
+    return true;
+  });
+  ipcMain.handle('translator:reveal-config', () => {
+    if (!settingsPath) return false;
+    shell.showItemInFolder(settingsPath);
+    return true;
+  });
+  ipcMain.handle('translator:check-update', async () => {
+    return {
+      currentVersion: app.getVersion(),
+      latestVersion: app.getVersion(),
+      hasUpdate: false,
+      checkedAt: new Date().toISOString(),
+      message: '当前已是最新版本'
+    };
+  });
+  ipcMain.handle('translator:get-app-info', () => ({
+    name: app.getName(),
+    version: app.getVersion(),
+    platform: process.platform,
+    electron: process.versions.electron,
+    node: process.versions.node
+  }));
   ipcMain.handle('translator:select-directory', (_event, defaultPath) => selectDirectory(defaultPath));
-  ipcMain.handle('translator:get-shortcut', () => shortcut);
+  ipcMain.handle('translator:get-shortcut', () => settings.preferences.shortcut || defaultShortcut);
   ipcMain.handle('translator:translate-online', (_event, payload) => translateOnline(payload));
   ipcMain.handle('translator:fetch-online-models', (_event, endpoint) => fetchOnlineModels(endpoint));
   ipcMain.handle('translator:test-online-endpoint', (_event, endpoint) =>

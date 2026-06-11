@@ -9,10 +9,17 @@
         :active-view="activeView"
         :shortcut-label="shortcutLabel"
         :title="pageTitle"
-        @toggle-settings="toggleSettings"
+        @open-app-settings="openAppSettings"
+        @back-to-translate="backToTranslate"
       />
 
-      <ModeSwitch :mode="settings.mode" :mode-loading="modeLoading" @change-mode="setMode" />
+      <ModeSwitch
+        v-if="activeView === 'translate'"
+        :mode="settings.mode"
+        :mode-loading="modeLoading"
+        @change-mode="setMode"
+        @go-config="goToConfig"
+      />
 
       <TranslatePage
         v-if="activeView === 'translate'"
@@ -83,6 +90,14 @@
           <n-button v-if="translating" type="warning" secondary @click="cancelTranslation">取消</n-button>
         </n-space>
       </footer>
+
+      <AppSettingsModal
+        v-model:show="appSettingsVisible"
+        :preferences="settings.preferences"
+        :save-loading="prefSaveLoading"
+        @save="savePreferences"
+        @message="onSettingsMessage"
+      />
     </main>
   </n-config-provider>
 </template>
@@ -91,6 +106,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { createDiscreteApi } from 'naive-ui';
 import AppHeader from './components/AppHeader.vue';
+import AppSettingsModal from './components/AppSettingsModal.vue';
 import ModeSwitch from './components/ModeSwitch.vue';
 import LocalSettingsPage from './pages/LocalSettingsPage.vue';
 import OnlineSettingsPage from './pages/OnlineSettingsPage.vue';
@@ -102,6 +118,8 @@ import { formatUsageMessage, hasUsageStatus } from './utils/usageFormatter';
 const { message } = createDiscreteApi(['message']);
 
 const activeView = ref('translate');
+const appSettingsVisible = ref(false);
+const prefSaveLoading = ref(false);
 const translatePage = ref(null);
 const sourceText = ref('');
 const translatedText = ref('');
@@ -138,6 +156,13 @@ const settings = reactive({
   online: {
     activeId: '',
     endpoints: []
+  },
+  preferences: {
+    autoStart: false,
+    silentStartup: false,
+    autoCheckUpdate: true,
+    shortcut: 'Control+Shift+T',
+    language: 'system'
   }
 });
 
@@ -273,6 +298,9 @@ function applySettings(nextSettings) {
     activeId: nextSettings.online?.activeId || '',
     endpoints: (nextSettings.online?.endpoints || []).map(normalizeEndpoint)
   };
+  if (nextSettings.preferences) {
+    settings.preferences = { ...settings.preferences, ...nextSettings.preferences };
+  }
 }
 
 function cloneSettings() {
@@ -287,9 +315,37 @@ function focusSourceInput() {
   window.setTimeout(() => translatePage.value?.focus(), 60);
 }
 
-function toggleSettings() {
-  activeView.value = activeView.value === 'translate' ? 'settings' : 'translate';
-  if (activeView.value === 'translate') focusSourceInput();
+function goToConfig() {
+  activeView.value = 'settings';
+}
+
+function backToTranslate() {
+  activeView.value = 'translate';
+  focusSourceInput();
+}
+
+function openAppSettings() {
+  appSettingsVisible.value = true;
+}
+
+async function savePreferences(next) {
+  prefSaveLoading.value = true;
+  try {
+    const saved = await window.translator.savePreferences(plain(next));
+    settings.preferences = { ...settings.preferences, ...saved };
+    if (saved.shortcut) {
+      shortcutLabel.value = saved.shortcut.replace('Control', 'Ctrl').replaceAll('+', ' + ');
+    }
+    showMessage('success', '设置已保存');
+  } catch (error) {
+    showMessage('error', error.message || '设置保存失败');
+  } finally {
+    prefSaveLoading.value = false;
+  }
+}
+
+function onSettingsMessage(payload) {
+  showMessage(payload.type || 'info', payload.content || '');
 }
 
 async function saveSettings() {

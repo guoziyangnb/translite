@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld('translator', {
   testUsageConfig: (endpoint) => ipcRenderer.invoke('translator:test-usage-config', endpoint),
   activateOnlineEndpoint: (endpoint) => ipcRenderer.invoke('translator:activate-online-endpoint', endpoint),
   getShortcut: () => ipcRenderer.invoke('translator:get-shortcut'),
+  savePreferences: (preferences) => ipcRenderer.invoke('translator:save-preferences', preferences),
+  getConfigPath: () => ipcRenderer.invoke('translator:get-config-path'),
+  openExternal: (url) => ipcRenderer.invoke('translator:open-external', url),
+  revealConfig: () => ipcRenderer.invoke('translator:reveal-config'),
+  checkUpdate: () => ipcRenderer.invoke('translator:check-update'),
+  getAppInfo: () => ipcRenderer.invoke('translator:get-app-info'),
   hide: () => ipcRenderer.invoke('translator:hide'),
   onFocusInput: (callback) => {
     ipcRenderer.on('translator:focus-input', callback);
