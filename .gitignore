@@ -1,10 +1,9 @@
 node_modules/
 dist/
 out/
+release/
 *.log
 .env
 
 models/
 .vite-dev.log
-
-package-lock.json

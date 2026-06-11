@@ -8,7 +8,11 @@
     "prestart": "npm run build",
     "start": "electron .",
     "dev": "vite --host 127.0.0.1",
-    "lint": "node --check src/main.js && node --check src/preload.js && node --check src/localTranslator.node.js"
+    "lint": "node --check src/main.js && node --check src/preload.js && node --check src/localTranslator.node.js",
+    "pack:win": "npm run build && electron-builder --win --x64",
+    "pack:mac": "npm run build && electron-builder --mac --x64 --arm64",
+    "release:win": "npm run build && electron-builder --win --x64 --publish always",
+    "release:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish always"
   },
   "keywords": [
     "electron",
@@ -23,6 +27,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.7",
     "electron": "^31.7.7",
+    "electron-builder": "^25.1.8",
     "vite": "^8.0.16"
   },
   "dependencies": {
@@ -35,6 +40,7 @@
     "@huggingface/transformers": "^4.2.0",
     "@lezer/highlight": "^1.2.3",
     "codemirror": "^6.0.2",
+    "electron-updater": "^6.3.9",
     "lucide-vue-next": "^0.577.0",
     "naive-ui": "^2.44.1",
     "vue": "^3.5.35"
@@ -43,5 +49,69 @@
     "@codemirror/autocomplete": "6.18.7",
     "@codemirror/commands": "6.8.1",
     "@codemirror/search": "6.5.11"
+  },
+  "build": {
+    "appId": "com.translite.app",
+    "productName": "TransLite",
+    "copyright": "Copyright © 2026 TransLite",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/main.js",
+      "src/preload.js",
+      "src/localTranslator.node.js",
+      "src/renderer/assets/**",
+      "dist/renderer/**",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/onnxruntime-node/**",
+      "**/node_modules/sharp/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "src/renderer/assets/translite-icon.png",
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TransLite",
+      "uninstallDisplayName": "TransLite ${version}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "src/renderer/assets/translite-icon.png",
+      "category": "public.app-category.productivity",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "identity": null
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "guoziyangnb",
+        "repo": "translite",
+        "releaseType": "release"
+      }
+    ]
   }
 }
